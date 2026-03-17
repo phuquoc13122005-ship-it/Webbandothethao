@@ -130,9 +130,10 @@ External integrations:
    - Google users use browser storage for cart/profile/orders.
    - Can cause cross-device inconsistency for Google users.
 
-4. Checkout/order writing is not transactional:
-   - Order header and order items are inserted in separate operations.
-   - Partial writes are possible if the second operation fails.
+4. Checkout/order writing atomicity depends on deployment state:
+   - Legacy path writes `orders` and `order_items` in separate client operations.
+   - New hardening work introduces RPC `create_checkout_order_atomic` in migration `20260314120000_create_checkout_order_rpc.sql`.
+   - Until that migration is applied in target environments, partial-write risk remains.
 
 5. Order deletion path is split across multiple operations:
    - `order_items` delete then `orders` delete as separate calls.

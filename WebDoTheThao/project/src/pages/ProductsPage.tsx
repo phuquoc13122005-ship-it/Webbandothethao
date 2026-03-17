@@ -14,6 +14,8 @@ const sortLabels: Record<SortOption, string> = {
   rating: 'Đánh giá cao',
 };
 
+const productsPageCache = new Map<string, Product[]>();
+
 export default function ProductsPage() {
   const [searchParams, setSearchParams] = useSearchParams();
   const [products, setProducts] = useState<Product[]>([]);
@@ -33,8 +35,18 @@ export default function ProductsPage() {
   }, []);
 
   useEffect(() => {
+    let active = true;
+
     async function load() {
-      setLoading(true);
+      const cacheKey = `${selectedCategory}::${searchQuery}`;
+      const cachedProducts = productsPageCache.get(cacheKey);
+      if (cachedProducts) {
+        setProducts(cachedProducts);
+        setLoading(false);
+      } else {
+        setLoading(true);
+      }
+
       let query = supabase.from('products').select('*');
 
       if (selectedCategory) {
@@ -53,10 +65,17 @@ export default function ProductsPage() {
       }
 
       const { data } = await query;
-      setProducts(data || []);
+      if (!active) return;
+      const nextProducts = data || [];
+      setProducts(nextProducts);
+      productsPageCache.set(cacheKey, nextProducts);
       setLoading(false);
     }
     load();
+
+    return () => {
+      active = false;
+    };
   }, [selectedCategory, searchQuery]);
 
   const sorted = useMemo(() => {

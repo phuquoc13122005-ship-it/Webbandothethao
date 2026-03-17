@@ -1,0 +1,746 @@
+UML DESIGN DOCUMENT
+Project: NHOM 5 - DACS (Business scope from provided images)
+Date: 2026-03-14
+
+================================================================
+1) USE CASE DIAGRAM
+================================================================
+
+1.1 Textual description
+
+Actors:
+- KhachHang (User)
+- NhanVien (Staff)
+- Admin
+
+KhachHang use cases:
+- DangKyTaiKhoan
+- DangNhap
+- QuenMatKhau
+- XemDanhSachSanPham
+- XemSanPhamBanChay
+- TimKiemSanPham
+- LocSanPhamTheoDanhMuc
+- XemChiTietSanPham
+- ThemVaoGioHang
+- CapNhatGioHang
+- DatHang
+- ThanhToan
+- XemLichSuDonHang
+- TheoDoiTrangThaiDonHang
+- HuyDonChuaXacNhan
+- XacNhanDaNhanHang
+- ThemSanPhamYeuThich
+- XoaSanPhamYeuThich
+- DanhGiaSanPham
+- ChamSaoSanPham
+- VietNhanXet
+- CapNhatThongTinCaNhan
+- DoiMatKhau
+- CapNhatHinhAnhProfile
+- ThemDiaChi
+- SuaDiaChi
+- XoaDiaChi
+- ChonDiaChiMacDinh
+- NhoChatbotTuVan
+
+NhanVien use cases:
+- XemDanhSachDonHang
+- XacNhanDonHang
+- CapNhatTrangThaiDonHang
+- QuanLySanPham
+- CapNhatSoLuongSanPham
+- QuanLyDanhMucSanPham
+- XemThongTinKhachHang
+- XuLyYeuCauHoTro
+- XemDanhGiaSanPham
+- DuyetDanhGia
+- AnDanhGiaKhongPhuHop
+- PhanHoiBinhLuanDanhGia
+- TaoMaGiamGia
+- CapNhatMaGiamGia
+- BatTatMaGiamGia
+- CauHinhQuyDinhMaGiamGia
+
+Admin use cases:
+- QuanLyTaiKhoanNguoiDung
+- ThemNhanVien
+- KhoaTaiKhoan
+- QuanLySanPham
+- QuanLyDanhMuc
+- QuanLyDonHang
+- QuanLyMaGiamGia
+- QuanLyDanhGiaSanPham
+- QuanLyTonKho
+- ThongKeTongSoNguoiDung
+- ThongKeTongSoSanPham
+- ThongKeTongSoDonHang
+- ThongKeDoanhThu
+- ThongKeDonHangTheoTrangThai
+- ThongKeSanPhamBanChay
+- ThongKeDoanhThuTheoThoiGian
+
+Use case relations:
+- DatHang ..> DangNhap : <<include>>
+- DatHang ..> ChonDiaChiMacDinh : <<include>>
+- DatHang ..> ThanhToan : <<include>>
+- DanhGiaSanPham ..> XacNhanDaNhanHang : <<extend>>
+- HuyDonChuaXacNhan ..> XemLichSuDonHang : <<extend>>
+- CapNhatThongTinCaNhan ..> DoiMatKhau : <<include>>
+- CapNhatThongTinCaNhan ..> CapNhatHinhAnhProfile : <<include>>
+
+
+1.2 PlantUML code (paste into PlantUML renderer)
+//
+@startuml
+left to right direction
+skinparam packageStyle rectangle
+
+actor "KhachHang" as User
+actor "NhanVien" as Staff
+actor "Admin" as Admin
+
+rectangle "He thong Thuong mai The thao" {
+  (DangKyTaiKhoan) as UC_Register
+  (DangNhap) as UC_Login
+  (QuenMatKhau) as UC_Forgot
+  (XemDanhSachSanPham) as UC_ViewProducts
+  (XemSanPhamBanChay) as UC_TopProducts
+  (TimKiemSanPham) as UC_Search
+  (LocSanPhamTheoDanhMuc) as UC_FilterCategory
+  (XemChiTietSanPham) as UC_ViewDetail
+  (ThemVaoGioHang) as UC_AddCart
+  (CapNhatGioHang) as UC_UpdateCart
+  (DatHang) as UC_Checkout
+  (ThanhToan) as UC_Payment
+  (XemLichSuDonHang) as UC_OrderHistory
+  (TheoDoiTrangThaiDonHang) as UC_TrackOrder
+  (HuyDonChuaXacNhan) as UC_CancelOrder
+  (XacNhanDaNhanHang) as UC_ConfirmReceived
+  (ThemSanPhamYeuThich) as UC_AddWishlist
+  (XoaSanPhamYeuThich) as UC_RemoveWishlist
+  (DanhGiaSanPham) as UC_Review
+  (ChamSaoSanPham) as UC_Rate
+  (VietNhanXet) as UC_Comment
+  (CapNhatThongTinCaNhan) as UC_Profile
+  (DoiMatKhau) as UC_ChangePass
+  (CapNhatHinhAnhProfile) as UC_UpdateAvatar
+  (ThemDiaChi) as UC_AddAddress
+  (SuaDiaChi) as UC_EditAddress
+  (XoaDiaChi) as UC_DeleteAddress
+  (ChonDiaChiMacDinh) as UC_DefaultAddress
+  (NhoChatbotTuVan) as UC_Chatbot
+
+  (XemDanhSachDonHang) as UC_StaffOrderList
+  (XacNhanDonHang) as UC_StaffConfirmOrder
+  (CapNhatTrangThaiDonHang) as UC_StaffUpdateOrderStatus
+  (QuanLySanPham) as UC_StaffManageProduct
+  (CapNhatSoLuongSanPham) as UC_StaffUpdateStock
+  (QuanLyDanhMucSanPham) as UC_StaffManageCategory
+  (XemThongTinKhachHang) as UC_StaffViewCustomer
+  (XuLyYeuCauHoTro) as UC_StaffSupport
+  (XemDanhGiaSanPham) as UC_StaffViewReview
+  (DuyetDanhGia) as UC_StaffApproveReview
+  (AnDanhGiaKhongPhuHop) as UC_StaffHideReview
+  (PhanHoiBinhLuanDanhGia) as UC_StaffReplyReview
+  (TaoMaGiamGia) as UC_StaffCreateCoupon
+  (CapNhatMaGiamGia) as UC_StaffUpdateCoupon
+  (BatTatMaGiamGia) as UC_StaffToggleCoupon
+  (CauHinhQuyDinhMaGiamGia) as UC_StaffCouponPolicy
+
+  (QuanLyTaiKhoanNguoiDung) as UC_AdminManageAccount
+  (ThemNhanVien) as UC_AdminCreateStaff
+  (KhoaTaiKhoan) as UC_AdminLockAccount
+  (QuanLySanPham) as UC_AdminManageProduct
+  (QuanLyDanhMuc) as UC_AdminManageCategory
+  (QuanLyDonHang) as UC_AdminManageOrder
+  (QuanLyMaGiamGia) as UC_AdminManageCoupon
+  (QuanLyDanhGiaSanPham) as UC_AdminManageReview
+  (QuanLyTonKho) as UC_AdminInventory
+  (ThongKeTongSoNguoiDung) as UC_StatUsers
+  (ThongKeTongSoSanPham) as UC_StatProducts
+  (ThongKeTongSoDonHang) as UC_StatOrders
+  (ThongKeDoanhThu) as UC_StatRevenue
+  (ThongKeDonHangTheoTrangThai) as UC_StatOrderStatus
+  (ThongKeSanPhamBanChay) as UC_StatTopProducts
+  (ThongKeDoanhThuTheoThoiGian) as UC_StatRevenueByTime
+}
+
+User --> UC_Register
+User --> UC_Login
+User --> UC_Forgot
+User --> UC_ViewProducts
+User --> UC_TopProducts
+User --> UC_Search
+User --> UC_FilterCategory
+User --> UC_ViewDetail
+User --> UC_AddCart
+User --> UC_UpdateCart
+User --> UC_Checkout
+User --> UC_OrderHistory
+User --> UC_TrackOrder
+User --> UC_CancelOrder
+User --> UC_ConfirmReceived
+User --> UC_AddWishlist
+User --> UC_RemoveWishlist
+User --> UC_Review
+User --> UC_Rate
+User --> UC_Comment
+User --> UC_Profile
+User --> UC_AddAddress
+User --> UC_EditAddress
+User --> UC_DeleteAddress
+User --> UC_DefaultAddress
+User --> UC_Chatbot
+
+Staff --> UC_StaffOrderList
+Staff --> UC_StaffConfirmOrder
+Staff --> UC_StaffUpdateOrderStatus
+Staff --> UC_StaffManageProduct
+Staff --> UC_StaffUpdateStock
+Staff --> UC_StaffManageCategory
+Staff --> UC_StaffViewCustomer
+Staff --> UC_StaffSupport
+Staff --> UC_StaffViewReview
+Staff --> UC_StaffApproveReview
+Staff --> UC_StaffHideReview
+Staff --> UC_StaffReplyReview
+Staff --> UC_StaffCreateCoupon
+Staff --> UC_StaffUpdateCoupon
+Staff --> UC_StaffToggleCoupon
+Staff --> UC_StaffCouponPolicy
+
+Admin --> UC_AdminManageAccount
+Admin --> UC_AdminCreateStaff
+Admin --> UC_AdminLockAccount
+Admin --> UC_AdminManageProduct
+Admin --> UC_AdminManageCategory
+Admin --> UC_AdminManageOrder
+Admin --> UC_AdminManageCoupon
+Admin --> UC_AdminManageReview
+Admin --> UC_AdminInventory
+Admin --> UC_StatUsers
+Admin --> UC_StatProducts
+Admin --> UC_StatOrders
+Admin --> UC_StatRevenue
+Admin --> UC_StatOrderStatus
+Admin --> UC_StatTopProducts
+Admin --> UC_StatRevenueByTime
+
+UC_Checkout .> UC_Login : <<include>>
+UC_Checkout .> UC_DefaultAddress : <<include>>
+UC_Checkout .> UC_Payment : <<include>>
+UC_Review .> UC_ConfirmReceived : <<extend>>
+UC_CancelOrder .> UC_OrderHistory : <<extend>>
+UC_Profile .> UC_ChangePass : <<include>>
+UC_Profile .> UC_UpdateAvatar : <<include>>
+
+@enduml//
+
+
+================================================================
+2) CLASS DIAGRAM
+================================================================
+
+2.1 Textual description
+
+Inheritance:
+- Staff extends User
+- Admin extends User
+
+Core domain classes:
+- User, Profile, Address
+- Category, Product, ProductVariant, InventoryLog
+- Cart, CartItem
+- Order, OrderItem, Payment
+- Coupon, CouponRule
+- WishlistItem
+- Review, ReviewReply
+- SupportTicket, ChatbotSession
+- ReportSummary
+
+Service classes:
+- AuthService
+- ProductService
+- CartService
+- OrderService
+- PaymentService
+- ReviewService
+- CouponService
+- SupportService
+- ReportService
+
+Main associations:
+- User 1..1 Profile
+- User 1..* Address
+- Category 1..* Product
+- Product 1..* ProductVariant
+- ProductVariant 1..* InventoryLog
+- User 1..1 Cart
+- Cart 1..* CartItem
+- User 1..* Order
+- Order 1..* OrderItem
+- Order 1..1 Payment
+- User 1..* Review
+- Product 1..* Review
+- User 1..* WishlistItem
+- User 1..* SupportTicket
+
+
+2.2 PlantUML code (paste into PlantUML renderer)
+//
+@startuml
+skinparam classAttributeIconSize 0
+
+class User {
+  +id: UUID
+  +email: string
+  +passwordHash: string
+  +role: string
+  +status: string
+  +createdAt: datetime
+}
+
+class Staff
+class Admin
+User <|-- Staff
+User <|-- Admin
+
+class Profile {
+  +userId: UUID
+  +fullName: string
+  +phone: string
+  +avatarUrl: string
+}
+
+class Address {
+  +id: UUID
+  +userId: UUID
+  +receiverName: string
+  +phone: string
+  +addressLine: string
+  +isDefault: bool
+}
+
+class Category {
+  +id: UUID
+  +name: string
+  +slug: string
+}
+
+class Product {
+  +id: UUID
+  +categoryId: UUID
+  +name: string
+  +price: decimal
+  +status: string
+}
+
+class ProductVariant {
+  +id: UUID
+  +productId: UUID
+  +color: string
+  +size: string
+  +stockQty: int
+}
+
+class InventoryLog {
+  +id: UUID
+  +variantId: UUID
+  +changeQty: int
+  +reason: string
+  +createdAt: datetime
+}
+
+class Cart {
+  +id: UUID
+  +userId: UUID
+}
+
+class CartItem {
+  +id: UUID
+  +cartId: UUID
+  +variantId: UUID
+  +quantity: int
+}
+
+class Order {
+  +id: UUID
+  +userId: UUID
+  +status: string
+  +totalAmount: decimal
+  +createdAt: datetime
+}
+
+class OrderItem {
+  +id: UUID
+  +orderId: UUID
+  +variantId: UUID
+  +quantity: int
+  +unitPrice: decimal
+}
+
+class Payment {
+  +id: UUID
+  +orderId: UUID
+  +method: string
+  +status: string
+  +paidAt: datetime
+}
+
+class Coupon {
+  +id: UUID
+  +code: string
+  +discountType: string
+  +discountValue: decimal
+  +isActive: bool
+}
+
+class CouponRule {
+  +startAt: datetime
+  +endAt: datetime
+  +maxUsage: int
+}
+
+class WishlistItem {
+  +id: UUID
+  +userId: UUID
+  +productId: UUID
+}
+
+class Review {
+  +id: UUID
+  +userId: UUID
+  +productId: UUID
+  +rating: int
+  +content: string
+  +status: string
+}
+
+class ReviewReply {
+  +id: UUID
+  +reviewId: UUID
+  +staffId: UUID
+  +content: string
+}
+
+class SupportTicket {
+  +id: UUID
+  +userId: UUID
+  +type: string
+  +status: string
+}
+
+class ChatbotSession {
+  +id: UUID
+  +userId: UUID
+  +contextJson: text
+}
+
+class ReportSummary {
+  +totalUsers: int
+  +totalProducts: int
+  +totalOrders: int
+  +totalRevenue: decimal
+}
+
+class AuthService
+class ProductService
+class CartService
+class OrderService
+class PaymentService
+class ReviewService
+class CouponService
+class SupportService
+class ReportService
+
+User "1" -- "1" Profile
+User "1" -- "*" Address
+Category "1" -- "*" Product
+Product "1" -- "*" ProductVariant
+ProductVariant "1" -- "*" InventoryLog
+User "1" -- "1" Cart
+Cart "1" -- "*" CartItem
+User "1" -- "*" Order
+Order "1" -- "*" OrderItem
+Order "1" -- "1" Payment
+Coupon "1" -- "1" CouponRule
+User "1" -- "*" WishlistItem
+User "1" -- "*" Review
+Review "1" -- "*" ReviewReply
+User "1" -- "*" SupportTicket
+User "1" -- "*" ChatbotSession
+
+AuthService ..> User
+ProductService ..> Product
+ProductService ..> Category
+CartService ..> Cart
+CartService ..> CartItem
+OrderService ..> Order
+OrderService ..> OrderItem
+PaymentService ..> Payment
+ReviewService ..> Review
+CouponService ..> Coupon
+SupportService ..> SupportTicket
+ReportService ..> ReportSummary
+
+@enduml //
+
+
+================================================================
+3) ERD (ENTITY RELATIONSHIP DIAGRAM)
+================================================================
+
+3.1 Textual description
+
+User-management:
+- users (PK: id)
+- profiles (PK/FK: user_id -> users.id)
+- addresses (PK: id, FK: user_id -> users.id)
+
+Catalog:
+- categories (PK: id)
+- products (PK: id, FK: category_id -> categories.id)
+- product_variants (PK: id, FK: product_id -> products.id)
+- inventory_logs (PK: id, FK: variant_id -> product_variants.id)
+
+Shopping:
+- carts (PK: id, FK: user_id -> users.id)
+- cart_items (PK: id, FK: cart_id -> carts.id, FK: variant_id -> product_variants.id)
+- wishlists (PK: id, FK: user_id -> users.id, FK: product_id -> products.id)
+
+Order-payment:
+- orders (PK: id, FK: user_id -> users.id, FK: address_id -> addresses.id, FK: coupon_id -> coupons.id)
+- order_items (PK: id, FK: order_id -> orders.id, FK: variant_id -> product_variants.id)
+- payments (PK: id, FK: order_id -> orders.id)
+- coupons (PK: id)
+
+Review-support:
+- reviews (PK: id, FK: user_id -> users.id, FK: product_id -> products.id)
+- review_replies (PK: id, FK: review_id -> reviews.id, FK: staff_id -> users.id)
+- support_tickets (PK: id, FK: user_id -> users.id, FK: order_id -> orders.id nullable)
+- chatbot_sessions (PK: id, FK: user_id -> users.id)
+
+
+3.2 PlantUML ERD code (paste into PlantUML renderer)
+
+@startuml
+hide circle
+skinparam linetype ortho
+
+entity "users" as users {
+  *id : uuid <<PK>>
+  --
+  email : varchar
+  password_hash : varchar
+  role : varchar
+  status : varchar
+  created_at : timestamptz
+}
+
+entity "profiles" as profiles {
+  *user_id : uuid <<PK, FK>>
+  --
+  full_name : varchar
+  phone : varchar
+  avatar_url : varchar
+  updated_at : timestamptz
+}
+
+entity "addresses" as addresses {
+  *id : uuid <<PK>>
+  --
+  user_id : uuid <<FK>>
+  receiver_name : varchar
+  phone : varchar
+  address_line : text
+  is_default : boolean
+}
+
+entity "categories" as categories {
+  *id : uuid <<PK>>
+  --
+  name : varchar
+  slug : varchar
+}
+
+entity "products" as products {
+  *id : uuid <<PK>>
+  --
+  category_id : uuid <<FK>>
+  name : varchar
+  price : numeric
+  status : varchar
+}
+
+entity "product_variants" as variants {
+  *id : uuid <<PK>>
+  --
+  product_id : uuid <<FK>>
+  color : varchar
+  size : varchar
+  stock_qty : int
+}
+
+entity "inventory_logs" as inv_logs {
+  *id : uuid <<PK>>
+  --
+  variant_id : uuid <<FK>>
+  change_qty : int
+  reason : varchar
+  created_at : timestamptz
+}
+
+entity "carts" as carts {
+  *id : uuid <<PK>>
+  --
+  user_id : uuid <<FK>>
+  created_at : timestamptz
+}
+
+entity "cart_items" as cart_items {
+  *id : uuid <<PK>>
+  --
+  cart_id : uuid <<FK>>
+  variant_id : uuid <<FK>>
+  quantity : int
+}
+
+entity "coupons" as coupons {
+  *id : uuid <<PK>>
+  --
+  code : varchar
+  discount_type : varchar
+  discount_value : numeric
+  start_at : timestamptz
+  end_at : timestamptz
+  max_usage : int
+  is_active : boolean
+}
+
+entity "orders" as orders {
+  *id : uuid <<PK>>
+  --
+  user_id : uuid <<FK>>
+  address_id : uuid <<FK>>
+  coupon_id : uuid <<FK, nullable>>
+  status : varchar
+  total_amount : numeric
+  created_at : timestamptz
+}
+
+entity "order_items" as order_items {
+  *id : uuid <<PK>>
+  --
+  order_id : uuid <<FK>>
+  variant_id : uuid <<FK>>
+  quantity : int
+  unit_price : numeric
+}
+
+entity "payments" as payments {
+  *id : uuid <<PK>>
+  --
+  order_id : uuid <<FK>>
+  method : varchar
+  status : varchar
+  paid_at : timestamptz
+  transaction_ref : varchar
+}
+
+entity "wishlists" as wishlists {
+  *id : uuid <<PK>>
+  --
+  user_id : uuid <<FK>>
+  product_id : uuid <<FK>>
+  created_at : timestamptz
+}
+
+entity "reviews" as reviews {
+  *id : uuid <<PK>>
+  --
+  user_id : uuid <<FK>>
+  product_id : uuid <<FK>>
+  rating : int
+  content : text
+  status : varchar
+  created_at : timestamptz
+}
+
+entity "review_replies" as review_replies {
+  *id : uuid <<PK>>
+  --
+  review_id : uuid <<FK>>
+  staff_id : uuid <<FK>>
+  content : text
+  created_at : timestamptz
+}
+
+entity "support_tickets" as tickets {
+  *id : uuid <<PK>>
+  --
+  user_id : uuid <<FK>>
+  order_id : uuid <<FK, nullable>>
+  type : varchar
+  subject : varchar
+  content : text
+  status : varchar
+  created_at : timestamptz
+}
+
+entity "chatbot_sessions" as chatbot_sessions {
+  *id : uuid <<PK>>
+  --
+  user_id : uuid <<FK>>
+  context_json : text
+  created_at : timestamptz
+}
+
+users ||--|| profiles
+users ||--o{ addresses
+categories ||--o{ products
+products ||--o{ variants
+variants ||--o{ inv_logs
+users ||--|| carts
+carts ||--o{ cart_items
+variants ||--o{ cart_items
+users ||--o{ orders
+addresses ||--o{ orders
+coupons ||--o{ orders
+orders ||--o{ order_items
+variants ||--o{ order_items
+orders ||--|| payments
+users ||--o{ wishlists
+products ||--o{ wishlists
+users ||--o{ reviews
+products ||--o{ reviews
+reviews ||--o{ review_replies
+users ||--o{ review_replies
+users ||--o{ tickets
+orders ||--o{ tickets
+users ||--o{ chatbot_sessions
+
+@enduml
+
+
+================================================================
+4) HOW TO RENDER TO IMAGE
+================================================================
+
+Option A (PlantUML online):
+1. Open [PlantUML Server](https://www.plantuml.com/plantuml/uml/).
+2. Copy one code block at a time (Use Case / Class / ERD).
+3. Export PNG/SVG and insert images back into report.
+
+Option B (VS Code plugin PlantUML):
+1. Save each code block into separate .puml files.
+2. Preview and export diagrams directly.
+
+
+================================================================
+5) SCOPE NOTE
+================================================================
+
+This document follows BUSINESS SCOPE from provided requirement images (User/Staff/Admin),
+not limited to currently implemented repository features.
+

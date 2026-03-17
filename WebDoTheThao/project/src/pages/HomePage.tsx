@@ -8,25 +8,50 @@ import { supabase } from '../lib/supabase';
 import type { Product, Category } from '../types';
 import ProductCard from '../components/ui/ProductCard';
 
+let homePageCache: {
+  featured: Product[];
+  categories: Category[];
+  allProducts: Product[];
+} | null = null;
+
 export default function HomePage() {
-  const [featured, setFeatured] = useState<Product[]>([]);
-  const [categories, setCategories] = useState<Category[]>([]);
-  const [allProducts, setAllProducts] = useState<Product[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [featured, setFeatured] = useState<Product[]>(homePageCache?.featured || []);
+  const [categories, setCategories] = useState<Category[]>(homePageCache?.categories || []);
+  const [allProducts, setAllProducts] = useState<Product[]>(homePageCache?.allProducts || []);
+  const [loading, setLoading] = useState(!homePageCache);
 
   useEffect(() => {
+    let active = true;
+
     async function load() {
+      if (!homePageCache) setLoading(true);
       const [featuredRes, catRes, productsRes] = await Promise.all([
         supabase.from('products').select('*').eq('featured', true).limit(4),
         supabase.from('categories').select('*').order('created_at'),
         supabase.from('products').select('*').order('created_at', { ascending: false }).limit(8),
       ]);
-      setFeatured(featuredRes.data || []);
-      setCategories(catRes.data || []);
-      setAllProducts(productsRes.data || []);
+
+      if (!active) return;
+
+      const nextFeatured = featuredRes.data || [];
+      const nextCategories = catRes.data || [];
+      const nextAllProducts = productsRes.data || [];
+
+      setFeatured(nextFeatured);
+      setCategories(nextCategories);
+      setAllProducts(nextAllProducts);
+      homePageCache = {
+        featured: nextFeatured,
+        categories: nextCategories,
+        allProducts: nextAllProducts,
+      };
       setLoading(false);
     }
     load();
+
+    return () => {
+      active = false;
+    };
   }, []);
 
   if (loading) {

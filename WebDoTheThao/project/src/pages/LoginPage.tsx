@@ -1,16 +1,32 @@
-import { useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { useEffect, useState } from 'react';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { Eye, EyeOff, Dumbbell, ArrowRight } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 
 export default function LoginPage() {
-  const { signIn } = useAuth();
+  const { user, loading: authLoading, signIn, signInWithGoogle } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const [googleLoading, setGoogleLoading] = useState(false);
+
+  useEffect(() => {
+    const params = new URLSearchParams(location.search);
+    const oauthError = params.get('error');
+    if (oauthError) {
+      setError(oauthError);
+    }
+  }, [location.search]);
+
+  useEffect(() => {
+    if (!authLoading && user) {
+      navigate('/', { replace: true });
+    }
+  }, [authLoading, user, navigate]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -21,7 +37,17 @@ export default function LoginPage() {
       setError(error);
       setLoading(false);
     } else {
-      navigate('/dashboard');
+      navigate('/');
+    }
+  };
+
+  const handleGoogleLogin = async () => {
+    setError('');
+    setGoogleLoading(true);
+    const { error } = await signInWithGoogle();
+    if (error) {
+      setError(error);
+      setGoogleLoading(false);
     }
   };
 
@@ -39,7 +65,9 @@ export default function LoginPage() {
             <div className="w-12 h-12 bg-white/10 backdrop-blur-sm rounded-2xl flex items-center justify-center">
               <Dumbbell className="w-6 h-6 text-white" />
             </div>
-            <span className="text-2xl font-bold text-white">SportZone</span>
+            <span className="text-2xl font-bold text-white">
+              Nika<span className="text-teal-200">Shop</span>
+            </span>
           </div>
           <h1 className="text-4xl font-bold text-white mb-4 leading-tight">
             Khởi động<br />hành trình thể thao
@@ -57,7 +85,9 @@ export default function LoginPage() {
               <div className="w-10 h-10 bg-gradient-to-br from-teal-500 to-emerald-600 rounded-xl flex items-center justify-center">
                 <Dumbbell className="w-5 h-5 text-white" />
               </div>
-              <span className="text-xl font-bold text-gray-900">Sport<span className="text-teal-600">Zone</span></span>
+              <span className="text-xl font-bold text-gray-900">
+                Nika<span className="text-teal-600">Shop</span>
+              </span>
             </div>
             <h2 className="text-2xl font-bold text-gray-900 mb-2">Đăng nhập</h2>
             <p className="text-gray-500">Chào mừng bạn quay lại!</p>
@@ -68,6 +98,33 @@ export default function LoginPage() {
               {error}
             </div>
           )}
+
+          <button
+            type="button"
+            onClick={handleGoogleLogin}
+            disabled={loading || googleLoading}
+            className="w-full mb-6 flex items-center justify-center gap-3 px-6 py-3.5 bg-white border border-gray-200 text-gray-700 font-semibold rounded-xl hover:bg-gray-50 transition-all active:scale-[0.98] disabled:opacity-60 disabled:cursor-not-allowed"
+          >
+            {googleLoading ? (
+              <div className="w-5 h-5 border-2 border-gray-300 border-t-gray-600 rounded-full animate-spin" />
+            ) : (
+              <>
+                <span className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-red-500 text-white text-xs font-bold">
+                  G
+                </span>
+                Tiếp tục với Google
+              </>
+            )}
+          </button>
+
+          <div className="relative mb-6">
+            <div className="absolute inset-0 flex items-center">
+              <div className="w-full border-t border-gray-200" />
+            </div>
+            <div className="relative flex justify-center text-xs">
+              <span className="bg-white px-3 text-gray-400">hoặc đăng nhập bằng email</span>
+            </div>
+          </div>
 
           <form onSubmit={handleSubmit} className="space-y-5">
             <div>
@@ -100,6 +157,11 @@ export default function LoginPage() {
                 >
                   {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                 </button>
+              </div>
+              <div className="mt-2 text-right">
+                <Link to="/forgot-password" className="text-sm font-semibold text-teal-600 hover:text-teal-700 transition-colors">
+                  Quên mật khẩu?
+                </Link>
               </div>
             </div>
 

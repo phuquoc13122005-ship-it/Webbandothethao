@@ -44,7 +44,28 @@ export function isReasonValid(reason: string, detail: string) {
 
 export function isCodOrder(paymentMethod: string | undefined | null, shippingAddress: string) {
   if (paymentMethod != null) {
-    return paymentMethod === 'cod';
+    const normalizedPaymentMethod = paymentMethod.trim().toLowerCase();
+    if (normalizedPaymentMethod === 'cod' || normalizedPaymentMethod === 'cash_on_delivery') {
+      return true;
+    }
+    if (normalizedPaymentMethod === 'bank_transfer') {
+      return false;
+    }
   }
-  return shippingAddress.includes('(COD)');
+
+  const normalizedShippingAddress = shippingAddress.trim().toLowerCase();
+  const hasCodMarker =
+    normalizedShippingAddress.includes('cod') ||
+    normalizedShippingAddress.includes('thanh toan khi nhan hang');
+  const hasBankTransferMarker =
+    normalizedShippingAddress.includes('chuyển khoản') ||
+    normalizedShippingAddress.includes('chuyen khoan') ||
+    normalizedShippingAddress.includes('bank transfer') ||
+    normalizedShippingAddress.includes('sepay') ||
+    normalizedShippingAddress.includes('qr');
+
+  if (hasCodMarker) return true;
+  if (hasBankTransferMarker) return false;
+  // Backward compatibility for legacy orders without payment markers.
+  return true;
 }

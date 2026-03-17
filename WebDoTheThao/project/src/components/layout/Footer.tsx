@@ -12,7 +12,7 @@ export default function Footer() {
                 <Dumbbell className="w-5 h-5 text-white" />
               </div>
               <span className="text-xl font-bold text-white">
-                Sport<span className="text-teal-400">Zone</span>
+                Nika<span className="text-teal-400">Shop</span>
               </span>
             </Link>
             <p className="text-sm leading-relaxed text-gray-400 mb-6">
@@ -86,7 +86,7 @@ export default function Footer() {
 
       <div className="border-t border-gray-800">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 flex flex-col sm:flex-row items-center justify-between gap-4">
-          <p className="text-sm text-gray-500">&copy; 2026 SportZone. Tất cả quyền được bảo lưu.</p>
+          <p className="text-sm text-gray-500">&copy; 2026 Nika Shop. Tất cả quyền được bảo lưu.</p>
           <div className="flex gap-6">
             <a href="#" className="text-sm text-gray-500 hover:text-gray-300 transition-colors">Điều khoản sử dụng</a>
             <a href="#" className="text-sm text-gray-500 hover:text-gray-300 transition-colors">Chính sách bảo mật</a>

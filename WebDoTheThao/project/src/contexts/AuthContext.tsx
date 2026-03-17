@@ -1,33 +1,99 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from 'react';
-import type { User, Session } from '@supabase/supabase-js';
 import { supabase } from '../lib/supabase';
 
+type AuthProvider = 'supabase' | 'google';
+
+export interface AuthUser {
+  id: string;
+  email: string | null;
+  fullName?: string | null;
+  avatarUrl?: string | null;
+  provider: AuthProvider;
+}
+
 interface AuthContextType {
-  user: User | null;
-  session: Session | null;
+  user: AuthUser | null;
   loading: boolean;
   signUp: (email: string, password: string, fullName: string) => Promise<{ error: string | null }>;
   signIn: (email: string, password: string) => Promise<{ error: string | null }>;
+  signInWithGoogle: () => Promise<{ error: string | null }>;
   signOut: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
+function getAuthServerBaseUrl() {
+  const configuredUrl = import.meta.env.VITE_AUTH_SERVER_URL;
+  if (configuredUrl && configuredUrl.trim()) {
+    return configuredUrl.replace(/\/$/, '');
+  }
+  return 'http://localhost:4000';
+}
+
+async function fetchGoogleSessionUser(): Promise<AuthUser | null> {
+  if ((import.meta.env.VITE_UI_ONLY ?? 'true') === 'true') {
+    return null;
+  }
+  try {
+    const response = await fetch(`${getAuthServerBaseUrl()}/auth/me`, {
+      credentials: 'include',
+    });
+
+    if (!response.ok) {
+      return null;
+    }
+
+    const payload = await response.json();
+    if (!payload?.authenticated || !payload.user?.id) {
+      return null;
+    }
+
+    return {
+      id: payload.user.id,
+      email: payload.user.email ?? null,
+      fullName: payload.user.name ?? null,
+      avatarUrl: payload.user.picture ?? null,
+      provider: 'google',
+    };
+  } catch {
+    return null;
+  }
+}
+
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const [user, setUser] = useState<User | null>(null);
-  const [session, setSession] = useState<Session | null>(null);
+  const [user, setUser] = useState<AuthUser | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setSession(session);
-      setUser(session?.user ?? null);
+    supabase.auth.getSession().then(async ({ data: { session } }) => {
+      if (session?.user) {
+        setUser({
+          id: session.user.id,
+          email: session.user.email ?? null,
+          fullName: (session.user.user_metadata?.full_name as string | undefined) ?? null,
+          avatarUrl: (session.user.user_metadata?.avatar_url as string | undefined) ?? null,
+          provider: 'supabase',
+        });
+      } else {
+        const googleUser = await fetchGoogleSessionUser();
+        setUser(googleUser);
+      }
       setLoading(false);
     });
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      setSession(session);
-      setUser(session?.user ?? null);
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, session) => {
+      if (session?.user) {
+        setUser({
+          id: session.user.id,
+          email: session.user.email ?? null,
+          fullName: (session.user.user_metadata?.full_name as string | undefined) ?? null,
+          avatarUrl: (session.user.user_metadata?.avatar_url as string | undefined) ?? null,
+          provider: 'supabase',
+        });
+      } else {
+        const googleUser = await fetchGoogleSessionUser();
+        setUser(googleUser);
+      }
       setLoading(false);
     });
 
@@ -50,12 +116,32 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return { error: null };
   };
 
+  const signInWithGoogle = async () => {
+    try {
+      window.location.href = `${getAuthServerBaseUrl()}/auth/google`;
+    } catch {
+      return { error: 'Không thể khởi tạo đăng nhập Google.' };
+    }
+    return { error: null };
+  };
+
   const signOut = async () => {
-    await supabase.auth.signOut();
+    if (user?.provider === 'supabase') {
+      await supabase.auth.signOut();
+    }
+    try {
+      await fetch(`${getAuthServerBaseUrl()}/auth/logout`, {
+        method: 'POST',
+        credentials: 'include',
+      });
+    } catch {
+      // Ignore network errors so local logout still works.
+    }
+    setUser(null);
   };
 
   return (
-    <AuthContext.Provider value={{ user, session, loading, signUp, signIn, signOut }}>
+    <AuthContext.Provider value={{ user, loading, signUp, signIn, signInWithGoogle, signOut }}>
       {children}
     </AuthContext.Provider>
   );

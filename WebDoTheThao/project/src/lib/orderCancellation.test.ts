@@ -24,8 +24,12 @@ describe('order cancellation rules', () => {
 
   it('detects COD from payment_method or legacy shipping text', () => {
     expect(isCodOrder('cod', 'test')).toBe(true);
+    expect(isCodOrder('COD', 'test')).toBe(true);
+    expect(isCodOrder('cash_on_delivery', 'test')).toBe(true);
     expect(isCodOrder('bank_transfer', 'test')).toBe(false);
+    expect(isCodOrder(undefined, 'abc COD xyz')).toBe(true);
     expect(isCodOrder(undefined, 'abc (COD) xyz')).toBe(true);
+    expect(isCodOrder(undefined, 'abc thanh toan khi nhan hang xyz')).toBe(true);
     expect(isCodOrder(undefined, 'abc (Chuyển khoản) xyz')).toBe(false);
   });
 

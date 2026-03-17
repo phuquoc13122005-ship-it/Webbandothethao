@@ -19,13 +19,16 @@ export default function ProductDetailPage() {
   const [product, setProduct] = useState<Product | null>(null);
   const [related, setRelated] = useState<Product[]>([]);
   const [quantity, setQuantity] = useState(1);
+  const [selectedSize, setSelectedSize] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
   const [adding, setAdding] = useState(false);
+  const shoeSizes = Array.from({ length: 10 }, (_, i) => i + 36);
 
   useEffect(() => {
     async function load() {
       setLoading(true);
       setQuantity(1);
+      setSelectedSize(null);
       const { data } = await supabase
         .from('products')
         .select('*, categories(*)')
@@ -57,8 +60,12 @@ export default function ProductDetailPage() {
       return;
     }
     if (!product) return;
+    if (selectedSize == null) {
+      window.alert('chọn size giày');
+      return;
+    }
     setAdding(true);
-    await addToCart(product.id, quantity);
+    await addToCart(product.id, quantity, selectedSize);
     setAdding(false);
   };
 
@@ -135,6 +142,25 @@ export default function ProductDetailPage() {
           </div>
 
           <p className="text-gray-600 leading-relaxed mb-8">{product.description}</p>
+
+          <div className="mb-6">
+            <p className="text-sm font-medium text-gray-700 mb-3">Size giày:</p>
+            <div className="flex flex-wrap gap-2">
+              {shoeSizes.map(size => (
+                <button
+                  key={size}
+                  onClick={() => setSelectedSize(size)}
+                  className={`min-w-12 px-3 py-2 rounded-lg border text-sm font-semibold transition-colors ${
+                    selectedSize === size
+                      ? 'border-teal-600 bg-teal-50 text-teal-700'
+                      : 'border-gray-200 text-gray-700 hover:border-teal-300'
+                  }`}
+                >
+                  {size}
+                </button>
+              ))}
+            </div>
+          </div>
 
           <div className="flex items-center gap-4 mb-8">
             <span className="text-sm font-medium text-gray-700">Số lượng:</span>

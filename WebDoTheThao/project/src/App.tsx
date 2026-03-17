@@ -9,6 +9,13 @@ import CartPage from './pages/CartPage';
 import LoginPage from './pages/LoginPage';
 import RegisterPage from './pages/RegisterPage';
 import DashboardPage from './pages/DashboardPage';
+import AuthCallbackPage from './pages/AuthCallbackPage';
+import CheckoutPage from './pages/CheckoutPage';
+import ForgotPasswordPage from './pages/ForgotPasswordPage';
+import VerifyResetCodePage from './pages/VerifyResetCodePage';
+import ResetPasswordPage from './pages/ResetPasswordPage';
+import StaffDashboardPage from './pages/StaffDashboardPage';
+import StaffAdminLoginPage from './pages/StaffAdminLoginPage';
 
 export default function App() {
   return (
@@ -21,9 +28,17 @@ export default function App() {
               <Route path="/products" element={<ProductsPage />} />
               <Route path="/products/:slug" element={<ProductDetailPage />} />
               <Route path="/cart" element={<CartPage />} />
+              <Route path="/checkout" element={<CheckoutPage />} />
               <Route path="/login" element={<LoginPage />} />
+              <Route path="/login/staff" element={<StaffAdminLoginPage />} />
+              <Route path="/login/admin" element={<StaffAdminLoginPage />} />
               <Route path="/register" element={<RegisterPage />} />
+              <Route path="/forgot-password" element={<ForgotPasswordPage />} />
+              <Route path="/verify-reset-code" element={<VerifyResetCodePage />} />
+              <Route path="/reset-password" element={<ResetPasswordPage />} />
+              <Route path="/auth/callback" element={<AuthCallbackPage />} />
               <Route path="/dashboard" element={<DashboardPage />} />
+              <Route path="/staff-dashboard" element={<StaffDashboardPage />} />
             </Route>
           </Routes>
         </CartProvider>
