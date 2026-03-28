@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { ArrowLeft, ArrowRight } from 'lucide-react';
-import { supabase } from '../lib/supabase';
+import { db } from '../lib/db';
 import { formatPrice } from '../lib/formatters';
-import { createSupabaseCheckoutOrder } from '../lib/checkoutOrder';
+import { createCheckoutOrder } from '../lib/checkoutOrder';
 import { buildVietQrImageUrl, formatCountdown, getDefaultQrExpiry } from '../lib/vietQr';
 import { prependGoogleOrder } from '../lib/googleLocalData';
 import { useAuth } from '../contexts/AuthContext';
@@ -189,7 +189,7 @@ export default function CheckoutPage() {
           }),
         });
       } else {
-        await createSupabaseCheckoutOrder(supabase, {
+        await createCheckoutOrder(db, {
           userId: user.id,
           total,
           shippingAddress: `${shippingAddress} (${paymentMethod === 'cod' ? 'COD' : 'Chuyển khoản'})`,

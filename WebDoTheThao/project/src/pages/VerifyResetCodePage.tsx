@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { ArrowRight, Dumbbell } from 'lucide-react';
-import { supabase } from '../lib/supabase';
+import { db } from '../lib/db';
 
 export default function VerifyResetCodePage() {
   const navigate = useNavigate();
@@ -25,7 +25,7 @@ export default function VerifyResetCodePage() {
     setError('');
     setLoading(true);
 
-    const { error: verifyError } = await supabase.auth.verifyOtp({
+    const { error: verifyError } = await db.auth.verifyOtp({
       email,
       token: code.trim(),
       type: 'email',

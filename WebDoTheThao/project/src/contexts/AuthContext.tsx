@@ -1,7 +1,7 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from 'react';
-import { supabase } from '../lib/supabase';
+import { db } from '../lib/db';
 
-type AuthProvider = 'supabase' | 'google';
+type AuthProvider = 'local' | 'google';
 
 export interface AuthUser {
   id: string;
@@ -31,9 +31,6 @@ function getAuthServerBaseUrl() {
 }
 
 async function fetchGoogleSessionUser(): Promise<AuthUser | null> {
-  if ((import.meta.env.VITE_UI_ONLY ?? 'true') === 'true') {
-    return null;
-  }
   try {
     const response = await fetch(`${getAuthServerBaseUrl()}/auth/me`, {
       credentials: 'include',
@@ -65,14 +62,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    supabase.auth.getSession().then(async ({ data: { session } }) => {
+    db.auth.getSession().then(async ({ data: { session } }: { data: { session: any } }) => {
       if (session?.user) {
         setUser({
           id: session.user.id,
           email: session.user.email ?? null,
           fullName: (session.user.user_metadata?.full_name as string | undefined) ?? null,
           avatarUrl: (session.user.user_metadata?.avatar_url as string | undefined) ?? null,
-          provider: 'supabase',
+          provider: 'local',
         });
       } else {
         const googleUser = await fetchGoogleSessionUser();
@@ -81,14 +78,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setLoading(false);
     });
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, session) => {
+    const { data: { subscription } } = db.auth.onAuthStateChange(async (_event: string, session: any) => {
       if (session?.user) {
         setUser({
           id: session.user.id,
           email: session.user.email ?? null,
           fullName: (session.user.user_metadata?.full_name as string | undefined) ?? null,
           avatarUrl: (session.user.user_metadata?.avatar_url as string | undefined) ?? null,
-          provider: 'supabase',
+          provider: 'local',
         });
       } else {
         const googleUser = await fetchGoogleSessionUser();
@@ -101,7 +98,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const signUp = async (email: string, password: string, fullName: string) => {
-    const { error } = await supabase.auth.signUp({
+    const { error } = await db.auth.signUp({
       email,
       password,
       options: { data: { full_name: fullName } },
@@ -111,7 +108,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const signIn = async (email: string, password: string) => {
-    const { error } = await supabase.auth.signInWithPassword({ email, password });
+    const { error } = await db.auth.signInWithPassword({ email, password });
     if (error) return { error: error.message };
     return { error: null };
   };
@@ -126,9 +123,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const signOut = async () => {
-    if (user?.provider === 'supabase') {
-      await supabase.auth.signOut();
-    }
+    await db.auth.signOut();
     try {
       await fetch(`${getAuthServerBaseUrl()}/auth/logout`, {
         method: 'POST',

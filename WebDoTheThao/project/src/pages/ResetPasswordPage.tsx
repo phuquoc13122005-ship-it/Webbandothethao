@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ArrowRight, Dumbbell, Eye, EyeOff } from 'lucide-react';
-import { supabase } from '../lib/supabase';
+import { db } from '../lib/db';
 import { useAuth } from '../contexts/AuthContext';
 
 export default function ResetPasswordPage() {
@@ -35,7 +35,7 @@ export default function ResetPasswordPage() {
     }
 
     setLoading(true);
-    const { error: updateError } = await supabase.auth.updateUser({ password });
+    const { error: updateError } = await db.auth.updateUser({ password });
     if (updateError) {
       setError(updateError.message);
       setLoading(false);

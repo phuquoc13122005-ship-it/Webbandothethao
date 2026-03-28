@@ -2,9 +2,18 @@ import { useEffect, useMemo, useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { ArrowRight, Eye, EyeOff, ShieldCheck } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
-import { supabase } from '../lib/supabase';
+import { db } from '../lib/db';
 
 type StaffRole = 'staff' | 'admin';
+
+function hasRoleAccess(mode: StaffRole, role: string | null | undefined) {
+  if (mode === 'admin') return role === 'admin';
+  return role === 'staff' || role === 'admin';
+}
+
+function getDashboardPathByMode(mode: StaffRole) {
+  return mode === 'admin' ? '/admin-dashboard' : '/staff-dashboard';
+}
 
 export default function StaffAdminLoginPage() {
   const { user, loading: authLoading, signIn, signOut } = useAuth();
@@ -27,13 +36,8 @@ export default function StaffAdminLoginPage() {
     ? 'Khu vực quản trị hệ thống NikaShop'
     : 'Khu vực dành cho nhân viên vận hành đơn hàng';
 
-  const hasRoleAccess = (role: string | null | undefined) => {
-    if (mode === 'admin') return role === 'admin';
-    return role === 'staff' || role === 'admin';
-  };
-
   const resolveUserRole = async (userId: string) => {
-    const { data, error: profileError } = await supabase
+    const { data, error: profileError } = await db
       .from('profiles')
       .select('role')
       .eq('id', userId)
@@ -47,16 +51,16 @@ export default function StaffAdminLoginPage() {
 
     const validateExistingSession = async () => {
       const role = await resolveUserRole(user.id);
-      if (!hasRoleAccess(role)) {
+      if (!hasRoleAccess(mode, role)) {
         await signOut();
         setError('Tài khoản này không có quyền truy cập khu vực nhân viên/admin.');
         return;
       }
-      navigate('/staff-dashboard', { replace: true });
+      navigate(getDashboardPathByMode(mode), { replace: true });
     };
 
     validateExistingSession();
-  }, [authLoading, hasRoleAccess, mode, navigate, signOut, user]);
+  }, [authLoading, mode, navigate, signOut, user]);
 
   const handleSubmit = async (event: React.FormEvent) => {
     event.preventDefault();
@@ -70,7 +74,7 @@ export default function StaffAdminLoginPage() {
       return;
     }
 
-    const { data: userData } = await supabase.auth.getUser();
+    const { data: userData } = await db.auth.getUser();
     const signedInUserId = userData.user?.id;
 
     if (!signedInUserId) {
@@ -81,7 +85,7 @@ export default function StaffAdminLoginPage() {
     }
 
     const role = await resolveUserRole(signedInUserId);
-    if (!hasRoleAccess(role)) {
+    if (!hasRoleAccess(mode, role)) {
       await signOut();
       setSubmitting(false);
       setError('Bạn không có quyền truy cập khu vực này.');
@@ -89,7 +93,7 @@ export default function StaffAdminLoginPage() {
     }
 
     setSubmitting(false);
-    navigate('/staff-dashboard', { replace: true });
+    navigate(getDashboardPathByMode(mode), { replace: true });
   };
 
   return (

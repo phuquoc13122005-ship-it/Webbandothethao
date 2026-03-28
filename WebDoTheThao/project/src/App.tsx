@@ -9,7 +9,6 @@ import CartPage from './pages/CartPage';
 import LoginPage from './pages/LoginPage';
 import RegisterPage from './pages/RegisterPage';
 import DashboardPage from './pages/DashboardPage';
-import AuthCallbackPage from './pages/AuthCallbackPage';
 import CheckoutPage from './pages/CheckoutPage';
 import ForgotPasswordPage from './pages/ForgotPasswordPage';
 import VerifyResetCodePage from './pages/VerifyResetCodePage';
@@ -36,9 +35,9 @@ export default function App() {
               <Route path="/forgot-password" element={<ForgotPasswordPage />} />
               <Route path="/verify-reset-code" element={<VerifyResetCodePage />} />
               <Route path="/reset-password" element={<ResetPasswordPage />} />
-              <Route path="/auth/callback" element={<AuthCallbackPage />} />
               <Route path="/dashboard" element={<DashboardPage />} />
               <Route path="/staff-dashboard" element={<StaffDashboardPage />} />
+              <Route path="/admin-dashboard" element={<StaffDashboardPage />} />
             </Route>
           </Routes>
         </CartProvider>

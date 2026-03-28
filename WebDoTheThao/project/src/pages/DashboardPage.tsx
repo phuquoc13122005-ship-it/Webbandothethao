@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { Package, ShoppingBag, User as UserIcon, LogOut, ChevronRight, Clock, MapPin, Phone, Mail, CreditCard as Edit3, Save, X, Trash2, Eye } from 'lucide-react';
-import { supabase } from '../lib/supabase';
+import { db } from '../lib/db';
 import { useAuth } from '../contexts/AuthContext';
 import { useCart } from '../contexts/CartContext';
 import type { Order, Profile } from '../types';
@@ -77,12 +77,12 @@ export default function DashboardPage() {
       }
 
       const [ordersRes, profileRes] = await Promise.all([
-        supabase
+        db
           .from('orders')
           .select('*, order_items(*, products(*))')
           .eq('user_id', currentUser.id)
           .order('created_at', { ascending: false }),
-        supabase
+        db
           .from('profiles')
           .select('*')
           .eq('id', currentUser.id)
@@ -132,7 +132,7 @@ export default function DashboardPage() {
     }
 
     setSaving(true);
-    await supabase
+    await db
       .from('profiles')
       .update({
         full_name: editForm.full_name,
@@ -142,7 +142,7 @@ export default function DashboardPage() {
       })
       .eq('id', user.id);
 
-    const { data } = await supabase.from('profiles').select('*').eq('id', user.id).maybeSingle();
+    const { data } = await db.from('profiles').select('*').eq('id', user.id).maybeSingle();
     setProfile(data);
     setEditing(false);
     setSaving(false);
@@ -224,7 +224,7 @@ export default function DashboardPage() {
       return;
     }
 
-    const { data: updatedOrder, error } = await supabase
+    const { data: updatedOrder, error } = await db
       .from('orders')
       .update({
         status: 'cancelled',
@@ -244,7 +244,7 @@ export default function DashboardPage() {
       error?.message?.includes('cancelled_at');
 
     if ((error || !updatedOrder) && missingCancelColumns) {
-      const { data: fallbackOrder, error: fallbackError } = await supabase
+      const { data: fallbackOrder, error: fallbackError } = await db
         .from('orders')
         .update({ status: 'cancelled' })
         .eq('id', cancelOrder.id)

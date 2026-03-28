@@ -1,5 +1,5 @@
 import { createContext, useContext, useEffect, useState, useCallback, type ReactNode } from 'react';
-import { supabase } from '../lib/supabase';
+import { db } from '../lib/db';
 import { useAuth } from './AuthContext';
 import type { CartItem } from '../types';
 
@@ -82,13 +82,13 @@ export function CartProvider({ children }: { children: ReactNode }) {
       }
 
       const productIds = localItems.map(item => item.product_id);
-      const { data: products } = await supabase
+      const { data: products } = await db
         .from('products')
         .select('*')
         .in('id', productIds);
 
-      const productMap = new Map((products || []).map(product => [product.id, product]));
-      const mappedItems: CartItem[] = localItems.flatMap(item => {
+      const productMap = new Map((products || []).map((product: any) => [product.id, product]));
+      const mappedItems = localItems.flatMap(item => {
         const product = productMap.get(item.product_id);
         if (!product) return [];
         return [{
@@ -100,7 +100,7 @@ export function CartProvider({ children }: { children: ReactNode }) {
           created_at: new Date().toISOString(),
           products: product,
         }];
-      });
+      }) as CartItem[];
 
       setItems(mappedItems);
       if (!silent) setLoading(false);
@@ -108,7 +108,7 @@ export function CartProvider({ children }: { children: ReactNode }) {
     }
 
     if (!silent) setLoading(true);
-    const { data } = await supabase
+    const { data } = await db
       .from('cart_items')
       .select('*, products(*)')
       .eq('user_id', user.id)
@@ -162,7 +162,7 @@ export function CartProvider({ children }: { children: ReactNode }) {
         ...prev,
       ]));
 
-      const { data: inserted, error } = await supabase
+      const { data: inserted, error } = await db
         .from('cart_items')
         .insert({ user_id: user.id, product_id: productId, shoe_size: shoeSize, quantity })
         .select('*, products(*)')
@@ -178,7 +178,7 @@ export function CartProvider({ children }: { children: ReactNode }) {
       return;
     }
 
-    const { error } = await supabase
+    const { error } = await db
       .from('cart_items')
       .update({ quantity: existing.quantity + quantity })
       .eq('id', existing.id);
@@ -205,7 +205,7 @@ export function CartProvider({ children }: { children: ReactNode }) {
     const previousItems = items;
     setItems(prev => prev.map(item => (item.id === itemId ? { ...item, quantity } : item)));
 
-    const { error } = await supabase.from('cart_items').update({ quantity }).eq('id', itemId);
+    const { error } = await db.from('cart_items').update({ quantity }).eq('id', itemId);
     if (error) {
       setItems(previousItems);
       await fetchCart(true);
@@ -239,7 +239,7 @@ export function CartProvider({ children }: { children: ReactNode }) {
     const previousItems = items;
     setItems(prev => prev.map(item => (item.id === itemId ? { ...item, shoe_size: shoeSize } : item)));
 
-    const { error } = await supabase.from('cart_items').update({ shoe_size: shoeSize }).eq('id', itemId);
+    const { error } = await db.from('cart_items').update({ shoe_size: shoeSize }).eq('id', itemId);
     if (error) {
       setItems(previousItems);
       await fetchCart(true);
@@ -261,7 +261,7 @@ export function CartProvider({ children }: { children: ReactNode }) {
     const previousItems = items;
     setItems(prev => prev.filter(item => item.id !== itemId));
 
-    const { error } = await supabase.from('cart_items').delete().eq('id', itemId);
+    const { error } = await db.from('cart_items').delete().eq('id', itemId);
     if (error) {
       setItems(previousItems);
       await fetchCart(true);
@@ -276,7 +276,7 @@ export function CartProvider({ children }: { children: ReactNode }) {
       return;
     }
 
-    await supabase.from('cart_items').delete().eq('user_id', user.id);
+    await db.from('cart_items').delete().eq('user_id', user.id);
     setItems([]);
   };
 

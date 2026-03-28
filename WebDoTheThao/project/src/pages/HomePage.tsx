@@ -4,7 +4,7 @@ import {
   ArrowRight, Truck, Shield, RotateCcw, Headphones,
   ChevronRight, Flame, Tag,
 } from 'lucide-react';
-import { supabase } from '../lib/supabase';
+import { db } from '../lib/db';
 import type { Product, Category } from '../types';
 import ProductCard from '../components/ui/ProductCard';
 
@@ -26,9 +26,9 @@ export default function HomePage() {
     async function load() {
       if (!homePageCache) setLoading(true);
       const [featuredRes, catRes, productsRes] = await Promise.all([
-        supabase.from('products').select('*').eq('featured', true).limit(4),
-        supabase.from('categories').select('*').order('created_at'),
-        supabase.from('products').select('*').order('created_at', { ascending: false }).limit(8),
+        db.from('products').select('*').eq('featured', true).limit(4),
+        db.from('categories').select('*').order('created_at'),
+        db.from('products').select('*').order('created_at', { ascending: false }).limit(8),
       ]);
 
       if (!active) return;
@@ -61,6 +61,8 @@ export default function HomePage() {
       </div>
     );
   }
+
+  const displayFeatured = featured.length > 0 ? featured : allProducts.slice(0, 4);
 
   return (
     <div>
@@ -145,14 +147,21 @@ export default function HomePage() {
               to={`/products?category=${cat.slug}`}
               className="group relative aspect-[4/5] rounded-2xl overflow-hidden"
             >
-              <img
-                src={cat.image_url}
-                alt={cat.name}
-                className="absolute inset-0 w-full h-full object-cover group-hover:scale-110 transition-transform duration-500"
-              />
+              {cat.image_url ? (
+                <img
+                  src={cat.image_url}
+                  alt={cat.name}
+                  className="absolute inset-0 w-full h-full object-cover group-hover:scale-110 transition-transform duration-500"
+                />
+              ) : (
+                <div className="absolute inset-0 bg-gradient-to-br from-slate-200 to-slate-300 group-hover:from-slate-300 group-hover:to-slate-400 transition-colors" />
+              )}
               <div className="absolute inset-0 bg-gradient-to-t from-gray-900/80 via-gray-900/20 to-transparent" />
               <div className="absolute bottom-0 left-0 right-0 p-4">
                 <h3 className="text-sm font-semibold text-white">{cat.name}</h3>
+                <span className="mt-2 inline-flex items-center gap-1 rounded-full bg-white/20 px-3 py-1 text-xs font-medium text-white backdrop-blur-sm border border-white/25 group-hover:bg-white/30 transition-colors">
+                  Xem danh mục <ChevronRight className="w-3.5 h-3.5" />
+                </span>
               </div>
             </Link>
           ))}
@@ -175,7 +184,7 @@ export default function HomePage() {
           </Link>
         </div>
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 lg:gap-6">
-          {featured.map(product => (
+          {displayFeatured.map(product => (
             <ProductCard key={product.id} product={product} />
           ))}
         </div>
@@ -204,7 +213,7 @@ export default function HomePage() {
               </Link>
             </div>
             <div className="flex-1 grid grid-cols-2 gap-4">
-              {featured.slice(0, 2).map(product => (
+              {displayFeatured.slice(0, 2).map(product => (
                 <Link
                   key={product.id}
                   to={`/products/${product.slug}`}

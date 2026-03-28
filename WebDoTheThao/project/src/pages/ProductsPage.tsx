@@ -1,7 +1,7 @@
 import { useEffect, useState, useMemo } from 'react';
 import { useSearchParams, Link } from 'react-router-dom';
 import { SlidersHorizontal, X, ChevronDown, Search } from 'lucide-react';
-import { supabase } from '../lib/supabase';
+import { db } from '../lib/db';
 import type { Product, Category } from '../types';
 import ProductCard from '../components/ui/ProductCard';
 
@@ -29,7 +29,7 @@ export default function ProductsPage() {
   const searchQuery = searchParams.get('search') || '';
 
   useEffect(() => {
-    supabase.from('categories').select('*').order('name').then(({ data }) => {
+    db.from('categories').select('*').order('name').then(({ data }: { data: any[] | null }) => {
       setCategories(data || []);
     });
   }, []);
@@ -47,10 +47,10 @@ export default function ProductsPage() {
         setLoading(true);
       }
 
-      let query = supabase.from('products').select('*');
+      let query = db.from('products').select('*');
 
       if (selectedCategory) {
-        const { data: cat } = await supabase
+        const { data: cat } = await db
           .from('categories')
           .select('id')
           .eq('slug', selectedCategory)

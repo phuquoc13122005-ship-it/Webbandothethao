@@ -1,11 +1,11 @@
 import { describe, expect, it, vi } from 'vitest';
-import { createSupabaseCheckoutOrder } from './checkoutOrder';
+import { createCheckoutOrder } from './checkoutOrder';
 
-describe('createSupabaseCheckoutOrder', () => {
+describe('createCheckoutOrder', () => {
   it('calls rpc with normalized payload and returns order id', async () => {
     const rpc = vi.fn().mockResolvedValue({ data: 'order-1', error: null });
 
-    const result = await createSupabaseCheckoutOrder(
+    const result = await createCheckoutOrder(
       { rpc } as never,
       {
         userId: 'u1',
@@ -29,7 +29,7 @@ describe('createSupabaseCheckoutOrder', () => {
     const rpc = vi.fn().mockResolvedValue({ data: null, error: { message: 'db failed' } });
 
     await expect(
-      createSupabaseCheckoutOrder(
+      createCheckoutOrder(
         { rpc } as never,
         {
           userId: 'u1',

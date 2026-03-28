@@ -16,7 +16,7 @@ type RpcClient = {
   rpc: (fn: string, args: unknown) => unknown;
 };
 
-export async function createSupabaseCheckoutOrder(
+export async function createCheckoutOrder(
   client: RpcClient,
   input: CreateCheckoutOrderInput,
 ): Promise<string> {

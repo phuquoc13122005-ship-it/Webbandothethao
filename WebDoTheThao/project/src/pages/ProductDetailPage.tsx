@@ -4,7 +4,7 @@ import {
   Star, ShoppingCart, Minus, Plus, Truck, Shield, RotateCcw,
   ChevronRight, Heart,
 } from 'lucide-react';
-import { supabase } from '../lib/supabase';
+import { db } from '../lib/db';
 import type { Product } from '../types';
 import { formatPrice, getDiscountPercent } from '../lib/formatters';
 import { useAuth } from '../contexts/AuthContext';
@@ -29,7 +29,7 @@ export default function ProductDetailPage() {
       setLoading(true);
       setQuantity(1);
       setSelectedSize(null);
-      const { data } = await supabase
+      const { data } = await db
         .from('products')
         .select('*, categories(*)')
         .eq('slug', slug)
@@ -42,7 +42,7 @@ export default function ProductDetailPage() {
 
       setProduct(data);
 
-      const { data: rel } = await supabase
+      const { data: rel } = await db
         .from('products')
         .select('*')
         .eq('category_id', data.category_id)
