@@ -93,6 +93,31 @@ async function ensureImageStorageTable() {
   `);
 }
 
+async function ensureProductAndCategoryOptionColumns() {
+  const ensureColumn = async (tableName, columnName, definitionSql) => {
+    const rows = await runQuery(
+      `select count(*) as count_value
+       from information_schema.columns
+       where table_schema = database()
+         and table_name = ?
+         and column_name = ?`,
+      [tableName, columnName],
+    );
+    const countValue = Number(rows?.[0]?.count_value || 0);
+    if (countValue > 0) return;
+    await runQuery(`alter table ${tableName} add column ${columnName} ${definitionSql}`);
+  };
+
+  await ensureColumn('products', 'color_options', 'text null');
+  await ensureColumn('products', 'size_options', 'varchar(100) null');
+  await ensureColumn('products', 'size_type', "varchar(20) not null default 'none'");
+  await ensureColumn('products', 'size_stock', 'text null');
+  await ensureColumn('products', 'image_gallery', 'text null');
+
+  await ensureColumn('categories', 'size_type', "varchar(20) not null default 'none'");
+  await ensureColumn('categories', 'size_values', 'varchar(100) null');
+}
+
 function buildWhereClause(filters = []) {
   const clauses = [];
   const values = [];
@@ -513,8 +538,9 @@ app.post('/api/db/query', async (req, res) => {
       sql += ` order by ${order.column} ${order.ascending ? 'asc' : 'desc'}`;
     }
     if (Number.isFinite(limit) && Number(limit) > 0) {
-      sql += ' limit ?';
-      values.push(Number(limit));
+      // Some MySQL setups reject bound parameters for LIMIT in prepared statements.
+      // We interpolate only after strict numeric validation to keep it safe.
+      sql += ` limit ${Math.floor(Number(limit))}`;
     }
     const rows = await runQuery(sql, values);
     const decorated = await decorateRows(table, String(select || '*'), rows);
@@ -640,13 +666,16 @@ app.post('/api/db/rpc', requireSession, async (req, res) => {
   }
 });
 
-ensureImageStorageTable()
+Promise.all([
+  ensureImageStorageTable(),
+  ensureProductAndCategoryOptionColumns(),
+])
   .then(() => {
     app.listen(PORT, () => {
       console.log(`Auth/API server running at http://localhost:${PORT}`);
     });
   })
   .catch(error => {
-    console.error('Failed to initialize image storage table:', error);
+    console.error('Failed to initialize database schema:', error);
     process.exit(1);
   });

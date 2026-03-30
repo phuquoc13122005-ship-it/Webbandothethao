@@ -33,6 +33,8 @@ type StaffTab =
   | 'overview'
   | 'orders'
   | 'products_list'
+  | 'new_products'
+  | 'featured_products'
   | 'inventory'
   | 'purchase_orders'
   | 'goods_receipt'
@@ -79,15 +81,25 @@ interface NewProductForm {
   brand: string;
   category_id: string;
   image_url: string;
+  size_type: CategorySizeType;
+  color_options: string;
+  size_options: string;
   price: string;
   original_price: string;
+  discount_percent: string;
   stock: string;
   featured: boolean;
 }
 
+type CategorySizeType = 'none' | 'apparel' | 'shoes';
+type EditProductForm = NewProductForm;
+
 const ORDER_STATUSES: Order['status'][] = ['pending', 'confirmed', 'shipping', 'delivered', 'cancelled'];
 const MAX_RENDER_ITEMS = 60;
 const MAX_PRODUCT_IMAGE_SIZE_BYTES = 300 * 1024;
+const NEW_PRODUCT_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
+const APPAREL_SIZES = ['S', 'M', 'L', 'XL', '2XL'];
+const SHOES_SIZES = ['36', '37', '38', '39', '40', '41', '42'];
 const IMAGE_COMPRESSION_OPTIONS = {
   maxSizeMB: 0.3,
   maxWidthOrHeight: 1400,
@@ -96,6 +108,8 @@ const IMAGE_COMPRESSION_OPTIONS = {
 };
 const PRODUCT_TABS: StaffTab[] = [
   'products_list',
+  'new_products',
+  'featured_products',
   'inventory',
   'purchase_orders',
   'goods_receipt',
@@ -108,6 +122,8 @@ const ALL_STAFF_TABS: StaffTab[] = [
   'overview',
   'orders',
   'products_list',
+  'new_products',
+  'featured_products',
   'inventory',
   'purchase_orders',
   'goods_receipt',
@@ -163,6 +179,88 @@ function formatVndInput(value: string) {
   const numericValue = Number(value);
   if (!Number.isFinite(numericValue)) return '';
   return new Intl.NumberFormat('vi-VN').format(numericValue);
+}
+
+function normalizePercentInput(value: string) {
+  const digitsOnly = value.replace(/\D/g, '');
+  if (!digitsOnly) return '';
+  const next = Math.min(99, Math.max(0, Number(digitsOnly)));
+  return String(next);
+}
+
+function computeDiscountedPrice(basePrice: number, discountPercent: number) {
+  if (!Number.isFinite(basePrice) || basePrice < 0) return 0;
+  const safePercent = Math.min(99, Math.max(0, discountPercent));
+  if (safePercent <= 0) return Math.round(basePrice);
+  return Math.round(basePrice * (100 - safePercent) / 100);
+}
+
+function deriveDiscountPercentFromPrices(price: number, originalPrice: number | null | undefined) {
+  if (!originalPrice || originalPrice <= 0 || originalPrice <= price) return 0;
+  return Math.min(99, Math.max(0, Math.round(((originalPrice - price) / originalPrice) * 100)));
+}
+
+function normalizeCommaValues(value: string) {
+  return value
+    .split(',')
+    .map(item => item.trim())
+    .filter(Boolean);
+}
+
+function getAllowedSizesByType(sizeType: CategorySizeType) {
+  if (sizeType === 'apparel') return APPAREL_SIZES;
+  if (sizeType === 'shoes') return SHOES_SIZES;
+  return [];
+}
+
+function normalizeSizesByType(rawValues: string[], sizeType: CategorySizeType) {
+  const allowed = getAllowedSizesByType(sizeType);
+  if (sizeType === 'none') return rawValues;
+  const allowedSet = new Set(allowed.map(item => item.toUpperCase()));
+  return rawValues
+    .map(item => item.toUpperCase())
+    .filter(item => allowedSet.has(item));
+}
+
+function parseSizeStockMap(rawValue?: string | null) {
+  if (!rawValue) return {} as Record<string, number>;
+  try {
+    const parsed = JSON.parse(rawValue) as Record<string, unknown>;
+    const entries = Object.entries(parsed).filter(([, value]) => Number.isFinite(Number(value)) && Number(value) >= 0);
+    return Object.fromEntries(entries.map(([key, value]) => [key, Math.floor(Number(value))])) as Record<string, number>;
+  } catch {
+    return {};
+  }
+}
+
+function parseImageGallery(rawValue?: string | null, mainImageUrl?: string | null) {
+  const result: string[] = [];
+  if (mainImageUrl) result.push(String(mainImageUrl));
+  if (!rawValue) return result;
+  try {
+    const parsed = JSON.parse(rawValue) as unknown;
+    if (Array.isArray(parsed)) {
+      for (const item of parsed) {
+        if (typeof item === 'string' && item.trim()) {
+          result.push(item.trim());
+        }
+      }
+    }
+  } catch {
+    return result;
+  }
+  return Array.from(new Set(result));
+}
+
+function getProductSizeOptions(product: Product) {
+  const raw = String(product.size_options || '')
+    .split(',')
+    .map(item => item.trim())
+    .filter(Boolean);
+  if (raw.length > 0) return raw;
+  if (product.size_type === 'apparel') return APPAREL_SIZES;
+  if (product.size_type === 'shoes') return SHOES_SIZES;
+  return [];
 }
 
 async function prepareImageForDatabase(file: File) {
@@ -221,18 +319,21 @@ export default function StaffDashboardPage() {
 
   const [orderStatusDrafts, setOrderStatusDrafts] = useState<Record<string, Order['status']>>({});
   const [stockDrafts, setStockDrafts] = useState<Record<string, string>>({});
+  const [inventorySizeDrafts, setInventorySizeDrafts] = useState<Record<string, string>>({});
   const [supportStatusDrafts, setSupportStatusDrafts] = useState<Record<string, SupportRequest['status']>>({});
   const [reviewStatusDrafts, setReviewStatusDrafts] = useState<Record<string, string>>({});
 
   const [newCategoryName, setNewCategoryName] = useState('');
   const [newCategorySlug, setNewCategorySlug] = useState('');
   const [newCategoryDescription, setNewCategoryDescription] = useState('');
+  const [newCategorySizeType, setNewCategorySizeType] = useState<CategorySizeType>('none');
   const [newCategoryImageUrl, setNewCategoryImageUrl] = useState('');
   const [newCategoryImageName, setNewCategoryImageName] = useState('');
   const [editingCategoryId, setEditingCategoryId] = useState<string | null>(null);
   const [editCategoryName, setEditCategoryName] = useState('');
   const [editCategorySlug, setEditCategorySlug] = useState('');
   const [editCategoryDescription, setEditCategoryDescription] = useState('');
+  const [editCategorySizeType, setEditCategorySizeType] = useState<CategorySizeType>('none');
   const [editCategoryImageUrl, setEditCategoryImageUrl] = useState('');
   const [editCategoryImageName, setEditCategoryImageName] = useState('');
   const [newProduct, setNewProduct] = useState<NewProductForm>({
@@ -242,13 +343,82 @@ export default function StaffDashboardPage() {
     brand: '',
     category_id: '',
     image_url: '',
+    size_type: 'none',
+    color_options: '',
+    size_options: '',
     price: '',
     original_price: '',
+    discount_percent: '',
     stock: '',
     featured: false,
   });
   const [productImageName, setProductImageName] = useState('');
+  const [newProductGalleryUrls, setNewProductGalleryUrls] = useState<string[]>([]);
+  const [newProductGalleryNames, setNewProductGalleryNames] = useState<string[]>([]);
+  const [editingProductId, setEditingProductId] = useState<string | null>(null);
+  const [editProduct, setEditProduct] = useState<EditProductForm>({
+    name: '',
+    slug: '',
+    description: '',
+    brand: '',
+    category_id: '',
+    image_url: '',
+    size_type: 'none',
+    color_options: '',
+    size_options: '',
+    price: '',
+    original_price: '',
+    discount_percent: '',
+    stock: '',
+    featured: false,
+  });
+  const [editProductImageName, setEditProductImageName] = useState('');
+  const [editProductGalleryUrls, setEditProductGalleryUrls] = useState<string[]>([]);
+  const [editProductGalleryNames, setEditProductGalleryNames] = useState<string[]>([]);
+  const [currentTimeMs, setCurrentTimeMs] = useState(() => Date.now());
   const shouldComputeOverview = activeTab === 'overview';
+  const newProductBasePrice = Number(newProduct.price || 0);
+  const newProductDiscountPercent = Number(newProduct.discount_percent || 0);
+  const newProductFinalPrice = computeDiscountedPrice(newProductBasePrice, newProductDiscountPercent);
+  const editProductBasePrice = Number(editProduct.price || 0);
+  const editProductDiscountPercent = Number(editProduct.discount_percent || 0);
+  const editProductFinalPrice = computeDiscountedPrice(editProductBasePrice, editProductDiscountPercent);
+  const selectedProductCategory = useMemo(
+    () => categories.find(item => item.id === newProduct.category_id),
+    [categories, newProduct.category_id],
+  );
+  const selectedCategorySizeType = (selectedProductCategory?.size_type || 'none') as CategorySizeType;
+  const selectedProductSizeType = (newProduct.size_type || selectedCategorySizeType || 'none') as CategorySizeType;
+
+  useEffect(() => {
+    const allowed = getAllowedSizesByType(selectedProductSizeType);
+    if (allowed.length === 0) {
+      return;
+    }
+    const normalizedCurrent = normalizeSizesByType(normalizeCommaValues(newProduct.size_options), selectedProductSizeType);
+    const nextValue = (normalizedCurrent.length > 0 ? normalizedCurrent : allowed).join(', ');
+    if (nextValue !== newProduct.size_options) {
+      setNewProduct(prev => ({ ...prev, size_options: nextValue }));
+    }
+  }, [selectedProductSizeType, newProduct.size_options]);
+
+  useEffect(() => {
+    const timer = window.setInterval(() => {
+      setCurrentTimeMs(Date.now());
+    }, 60 * 1000);
+    return () => window.clearInterval(timer);
+  }, []);
+
+  useEffect(() => {
+    if (!editingProductId) return;
+    const allowed = getAllowedSizesByType(editProduct.size_type);
+    if (allowed.length === 0) return;
+    const normalizedCurrent = normalizeSizesByType(normalizeCommaValues(editProduct.size_options), editProduct.size_type);
+    const nextValue = (normalizedCurrent.length > 0 ? normalizedCurrent : allowed).join(', ');
+    if (nextValue !== editProduct.size_options) {
+      setEditProduct(prev => ({ ...prev, size_options: nextValue }));
+    }
+  }, [editingProductId, editProduct.size_type, editProduct.size_options]);
 
   const handleTabChange = (nextTab: StaffTab) => {
     setActiveTab(nextTab);
@@ -541,6 +711,21 @@ export default function StaffDashboardPage() {
   );
 
   const visibleProducts = useMemo(() => products.slice(0, MAX_RENDER_ITEMS), [products]);
+  const visibleNewProducts = useMemo(
+    () => [...products]
+      .filter(item => {
+        const createdAtMs = new Date(item.created_at || '').getTime();
+        if (!Number.isFinite(createdAtMs)) return false;
+        return currentTimeMs - createdAtMs <= NEW_PRODUCT_WINDOW_MS;
+      })
+      .sort((a, b) => new Date(b.created_at || '').getTime() - new Date(a.created_at || '').getTime())
+      .slice(0, MAX_RENDER_ITEMS),
+    [products, currentTimeMs],
+  );
+  const visibleFeaturedProducts = useMemo(
+    () => products.filter(item => item.featured).slice(0, MAX_RENDER_ITEMS),
+    [products],
+  );
   const visibleOrders = useMemo(() => orders.slice(0, MAX_RENDER_ITEMS), [orders]);
   const visibleCustomers = useMemo(() => customers.slice(0, MAX_RENDER_ITEMS), [customers]);
   const visibleSupportRequests = useMemo(() => supportRequests.slice(0, MAX_RENDER_ITEMS), [supportRequests]);
@@ -579,23 +764,46 @@ export default function StaffDashboardPage() {
     setOrders(prev => prev.map(order => (order.id === orderId ? { ...order, status: nextStatus } : order)));
   };
 
-  const handleUpdateStock = async (productId: string) => {
-    const stockValue = Number(stockDrafts[productId] || 0);
+  const handleUpdateStock = async (productId: string, sizeKey?: string | null) => {
+    const draftKey = sizeKey ? `${productId}::${sizeKey}` : productId;
+    const stockValue = Number(stockDrafts[draftKey] || 0);
     if (!Number.isFinite(stockValue) || stockValue < 0) {
       window.alert('Số lượng tồn kho không hợp lệ.');
       return;
     }
+    const product = products.find(item => item.id === productId);
+    if (!product) return;
+
+    let nextStock = Math.floor(stockValue);
+    let nextSizeStockRaw: string | null = product.size_stock || null;
+    if (sizeKey) {
+      const sizeStockMap = parseSizeStockMap(product.size_stock);
+      if (Object.keys(sizeStockMap).length === 0) {
+        const allSizeOptions = getProductSizeOptions(product);
+        allSizeOptions.forEach(option => {
+          sizeStockMap[option] = 0;
+        });
+      }
+      sizeStockMap[sizeKey] = Math.floor(stockValue);
+      nextStock = Object.values(sizeStockMap).reduce((sum, value) => sum + Math.floor(Number(value) || 0), 0);
+      nextSizeStockRaw = JSON.stringify(sizeStockMap);
+    }
+
     setSubmitting(true);
     const { error: updateError } = await db
       .from('products')
-      .update({ stock: Math.floor(stockValue) })
+      .update({ stock: nextStock, size_stock: nextSizeStockRaw })
       .eq('id', productId);
     setSubmitting(false);
     if (updateError) {
       window.alert('Không thể cập nhật số lượng sản phẩm.');
       return;
     }
-    setProducts(prev => prev.map(item => (item.id === productId ? { ...item, stock: Math.floor(stockValue) } : item)));
+    setProducts(prev => prev.map(item => (
+      item.id === productId
+        ? { ...item, stock: nextStock, size_stock: nextSizeStockRaw || undefined }
+        : item
+    )));
   };
 
   const handleCategoryImageChange = async (event: React.ChangeEvent<HTMLInputElement>, target: 'new' | 'edit') => {
@@ -632,6 +840,8 @@ export default function StaffDashboardPage() {
       return;
     }
 
+    const sizeValues = getAllowedSizesByType(newCategorySizeType).join(',');
+
     setSubmitting(true);
     const { data, error: createError } = await db
       .from('categories')
@@ -640,6 +850,8 @@ export default function StaffDashboardPage() {
         slug,
         description: newCategoryDescription.trim(),
         image_url: newCategoryImageUrl,
+        size_type: newCategorySizeType,
+        size_values: sizeValues || null,
       })
       .select('*')
       .maybeSingle();
@@ -654,6 +866,7 @@ export default function StaffDashboardPage() {
     setNewCategoryName('');
     setNewCategorySlug('');
     setNewCategoryDescription('');
+    setNewCategorySizeType('none');
     setNewCategoryImageUrl('');
     setNewCategoryImageName('');
   };
@@ -663,6 +876,7 @@ export default function StaffDashboardPage() {
     setEditCategoryName(cat.name);
     setEditCategorySlug(cat.slug);
     setEditCategoryDescription(cat.description || '');
+    setEditCategorySizeType((cat.size_type || 'none') as CategorySizeType);
     setEditCategoryImageUrl(cat.image_url || '');
     setEditCategoryImageName(cat.image_url ? 'Ảnh hiện tại' : '');
   };
@@ -672,6 +886,7 @@ export default function StaffDashboardPage() {
     setEditCategoryName('');
     setEditCategorySlug('');
     setEditCategoryDescription('');
+    setEditCategorySizeType('none');
     setEditCategoryImageUrl('');
     setEditCategoryImageName('');
   };
@@ -683,6 +898,7 @@ export default function StaffDashboardPage() {
       window.alert('Tên và slug không được để trống.');
       return;
     }
+    const sizeValues = getAllowedSizesByType(editCategorySizeType).join(',');
     setSubmitting(true);
     const { error: updateError } = await db
       .from('categories')
@@ -691,6 +907,8 @@ export default function StaffDashboardPage() {
         slug,
         description: editCategoryDescription.trim(),
         image_url: editCategoryImageUrl,
+        size_type: editCategorySizeType,
+        size_values: sizeValues || null,
       })
       .eq('id', categoryId);
     setSubmitting(false);
@@ -701,7 +919,15 @@ export default function StaffDashboardPage() {
     setCategories(prev =>
       prev.map(cat =>
         cat.id === categoryId
-          ? { ...cat, name, slug, description: editCategoryDescription.trim(), image_url: editCategoryImageUrl }
+          ? {
+              ...cat,
+              name,
+              slug,
+              description: editCategoryDescription.trim(),
+              image_url: editCategoryImageUrl,
+              size_type: editCategorySizeType,
+              size_values: sizeValues || undefined,
+            }
           : cat,
       ),
     );
@@ -732,9 +958,16 @@ export default function StaffDashboardPage() {
     const description = newProduct.description.trim();
     const categoryId = newProduct.category_id.trim();
     const imageUrl = newProduct.image_url.trim();
-    const price = Number(newProduct.price || 0);
+    const colorOptions = normalizeCommaValues(newProduct.color_options).join(', ');
+    const categorySizeType = (newProduct.size_type || 'none') as CategorySizeType;
+    const rawSizeOptions = normalizeCommaValues(newProduct.size_options);
+    const normalizedSizeOptions = normalizeSizesByType(rawSizeOptions, categorySizeType);
+    const sizeOptions = normalizedSizeOptions.join(', ');
+    const basePrice = Number(newProduct.price || 0);
+    const discountPercent = Number(newProduct.discount_percent || 0);
+    const price = computeDiscountedPrice(basePrice, discountPercent);
     const stock = Math.floor(Number(newProduct.stock || 0));
-    const originalPrice = newProduct.original_price.trim() === '' ? null : Number(newProduct.original_price);
+    const originalPrice = discountPercent > 0 ? basePrice : null;
 
     if (!name || !slug || !categoryId) {
       window.alert('Vui lòng nhập tên, slug và chọn danh mục sản phẩm.');
@@ -744,18 +977,23 @@ export default function StaffDashboardPage() {
       window.alert('Vui lòng chọn ảnh sản phẩm từ máy của bạn.');
       return;
     }
-    if (!Number.isFinite(price) || price < 0) {
-      window.alert('Giá bán không hợp lệ.');
+    if (!Number.isFinite(basePrice) || basePrice < 0) {
+      window.alert('Giá gốc không hợp lệ.');
+      return;
+    }
+    if (!Number.isFinite(discountPercent) || discountPercent < 0 || discountPercent > 99) {
+      window.alert('Phần trăm giảm giá phải từ 0 đến 99.');
       return;
     }
     if (!Number.isFinite(stock) || stock < 0) {
       window.alert('Tồn kho không hợp lệ.');
       return;
     }
-    if (originalPrice != null && (!Number.isFinite(originalPrice) || originalPrice < 0)) {
-      window.alert('Giá so sánh không hợp lệ.');
+    if (categorySizeType !== 'none' && normalizedSizeOptions.length === 0) {
+      window.alert('Size không hợp lệ với danh mục đã chọn.');
       return;
     }
+    const mergedGallery = Array.from(new Set([imageUrl, ...newProductGalleryUrls]));
 
     setSubmitting(true);
     const { data, error: createError } = await db
@@ -771,6 +1009,10 @@ export default function StaffDashboardPage() {
         original_price: originalPrice,
         stock,
         featured: newProduct.featured,
+        size_type: categorySizeType,
+        color_options: colorOptions || null,
+        size_options: sizeOptions || null,
+        image_gallery: mergedGallery.length > 0 ? JSON.stringify(mergedGallery) : null,
         rating: 0,
         reviews_count: 0,
       })
@@ -779,7 +1021,8 @@ export default function StaffDashboardPage() {
     setSubmitting(false);
 
     if (createError || !data) {
-      window.alert('Không thể tạo sản phẩm mới.');
+      const message = createError?.message || 'Không thể tạo sản phẩm mới.';
+      window.alert(message);
       return;
     }
 
@@ -792,12 +1035,18 @@ export default function StaffDashboardPage() {
       brand: '',
       category_id: categoryId,
       image_url: '',
+      size_type: categorySizeType,
+      color_options: '',
+      size_options: getAllowedSizesByType(categorySizeType).join(', '),
       price: '',
       original_price: '',
+      discount_percent: '',
       stock: '',
       featured: false,
     });
     setProductImageName('');
+    setNewProductGalleryUrls([]);
+    setNewProductGalleryNames([]);
   };
 
   const handleProductImageChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -810,6 +1059,7 @@ export default function StaffDashboardPage() {
     try {
       const { imageUrl, finalFile, compressed } = await prepareImageForDatabase(file);
       setNewProduct(prev => ({ ...prev, image_url: imageUrl }));
+      setNewProductGalleryUrls(prev => Array.from(new Set([imageUrl, ...prev])));
       setProductImageName(
         compressed
           ? `${file.name} (đã nén còn ${(finalFile.size / 1024).toFixed(0)}KB)`
@@ -820,6 +1070,187 @@ export default function StaffDashboardPage() {
       setProductImageName('');
       setNewProduct(prev => ({ ...prev, image_url: '' }));
     }
+  };
+
+  const handleProductGalleryChange = async (
+    event: React.ChangeEvent<HTMLInputElement>,
+    target: 'new' | 'edit',
+  ) => {
+    const files = Array.from(event.target.files || []);
+    if (files.length === 0) return;
+    const uploadedUrls: string[] = [];
+    const uploadedNames: string[] = [];
+    for (const file of files) {
+      try {
+        const { imageUrl, finalFile, compressed } = await prepareImageForDatabase(file);
+        uploadedUrls.push(imageUrl);
+        uploadedNames.push(
+          compressed
+            ? `${file.name} (đã nén còn ${(finalFile.size / 1024).toFixed(0)}KB)`
+            : `${file.name} (${(finalFile.size / 1024).toFixed(0)}KB)`,
+        );
+      } catch {
+        window.alert(`Không thể upload ảnh: ${file.name}`);
+      }
+    }
+    if (uploadedUrls.length === 0) return;
+    if (target === 'new') {
+      setNewProductGalleryUrls(prev => Array.from(new Set([...prev, ...uploadedUrls])));
+      setNewProductGalleryNames(prev => [...prev, ...uploadedNames]);
+    } else {
+      setEditProductGalleryUrls(prev => Array.from(new Set([...prev, ...uploadedUrls])));
+      setEditProductGalleryNames(prev => [...prev, ...uploadedNames]);
+    }
+    event.target.value = '';
+  };
+
+  const removeGalleryImage = (target: 'new' | 'edit', imageUrl: string) => {
+    if (target === 'new') {
+      setNewProductGalleryUrls(prev => prev.filter(url => url !== imageUrl));
+      return;
+    }
+    setEditProductGalleryUrls(prev => prev.filter(url => url !== imageUrl));
+  };
+
+  const startEditProduct = (product: Product) => {
+    setEditingProductId(product.id);
+    const parsedGallery = parseImageGallery(product.image_gallery, product.image_url);
+    setEditProduct({
+      name: product.name || '',
+      slug: product.slug || '',
+      description: product.description || '',
+      brand: product.brand || '',
+      category_id: product.category_id || '',
+      image_url: product.image_url || '',
+      size_type: (product.size_type || product.categories?.size_type || 'none') as CategorySizeType,
+      color_options: product.color_options || '',
+      size_options: product.size_options || '',
+      price: String((product.original_price && product.original_price > product.price) ? product.original_price : product.price),
+      original_price: product.original_price == null ? '' : String(product.original_price),
+      discount_percent: String(deriveDiscountPercentFromPrices(product.price, product.original_price)),
+      stock: String(product.stock ?? 0),
+      featured: Boolean(product.featured),
+    });
+    setEditProductImageName(product.image_url ? 'Ảnh hiện tại' : '');
+    setEditProductGalleryUrls(parsedGallery);
+    setEditProductGalleryNames(parsedGallery.map((_, index) => `Ảnh ${index + 1}`));
+  };
+
+  const cancelEditProduct = () => {
+    setEditingProductId(null);
+    setEditProduct({
+      name: '',
+      slug: '',
+      description: '',
+      brand: '',
+      category_id: '',
+      image_url: '',
+      size_type: 'none',
+      color_options: '',
+      size_options: '',
+      price: '',
+      original_price: '',
+      discount_percent: '',
+      stock: '',
+      featured: false,
+    });
+    setEditProductImageName('');
+    setEditProductGalleryUrls([]);
+    setEditProductGalleryNames([]);
+  };
+
+  const handleEditProductImageChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    try {
+      const { imageUrl, finalFile, compressed } = await prepareImageForDatabase(file);
+      setEditProduct(prev => ({ ...prev, image_url: imageUrl }));
+      setEditProductGalleryUrls(prev => Array.from(new Set([imageUrl, ...prev])));
+      setEditProductImageName(
+        compressed
+          ? `${file.name} (đã nén còn ${(finalFile.size / 1024).toFixed(0)}KB)`
+          : `${file.name} (${(finalFile.size / 1024).toFixed(0)}KB)`,
+      );
+    } catch {
+      window.alert('Không thể xử lý hoặc upload ảnh. Vui lòng thử lại.');
+    }
+  };
+
+  const handleUpdateProduct = async (productId: string) => {
+    const name = editProduct.name.trim();
+    const slug = (editProduct.slug.trim() || slugify(name)).slice(0, 100);
+    const categoryId = editProduct.category_id.trim();
+    const imageUrl = editProduct.image_url.trim();
+    const brand = editProduct.brand.trim();
+    const description = editProduct.description.trim();
+    const basePrice = Number(editProduct.price || 0);
+    const discountPercent = Number(editProduct.discount_percent || 0);
+    const price = computeDiscountedPrice(basePrice, discountPercent);
+    const stock = Math.floor(Number(editProduct.stock || 0));
+    const originalPrice = discountPercent > 0 ? basePrice : null;
+    const colorOptions = normalizeCommaValues(editProduct.color_options).join(', ');
+    const sizeType = (editProduct.size_type || 'none') as CategorySizeType;
+    const normalizedSizeOptions = normalizeSizesByType(normalizeCommaValues(editProduct.size_options), sizeType);
+    const sizeOptions = normalizedSizeOptions.join(', ');
+    const mergedGallery = Array.from(new Set([imageUrl, ...editProductGalleryUrls]));
+
+    if (!name || !slug || !categoryId) {
+      window.alert('Vui lòng nhập tên, slug và chọn danh mục.');
+      return;
+    }
+    if (!imageUrl) {
+      window.alert('Vui lòng chọn ảnh sản phẩm.');
+      return;
+    }
+    if (!Number.isFinite(basePrice) || basePrice < 0) {
+      window.alert('Giá gốc không hợp lệ.');
+      return;
+    }
+    if (!Number.isFinite(discountPercent) || discountPercent < 0 || discountPercent > 99) {
+      window.alert('Phần trăm giảm giá phải từ 0 đến 99.');
+      return;
+    }
+    if (!Number.isFinite(stock) || stock < 0) {
+      window.alert('Tồn kho không hợp lệ.');
+      return;
+    }
+    if (sizeType !== 'none' && normalizedSizeOptions.length === 0) {
+      window.alert('Size không hợp lệ với loại size đã chọn.');
+      return;
+    }
+
+    setSubmitting(true);
+    const { data, error: updateError } = await db
+      .from('products')
+      .update({
+        name,
+        slug,
+        description,
+        brand: brand || 'Nika Shop',
+        category_id: categoryId,
+        image_url: imageUrl,
+        price,
+        original_price: originalPrice,
+        stock,
+        featured: editProduct.featured,
+        size_type: sizeType,
+        color_options: colorOptions || null,
+        size_options: sizeOptions || null,
+        image_gallery: mergedGallery.length > 0 ? JSON.stringify(mergedGallery) : null,
+      })
+      .eq('id', productId)
+      .select('*, categories(*)')
+      .maybeSingle();
+    setSubmitting(false);
+
+    if (updateError || !data) {
+      window.alert(updateError?.message || 'Không thể cập nhật sản phẩm.');
+      return;
+    }
+
+    setProducts(prev => prev.map(item => (item.id === productId ? data as Product : item)));
+    setStockDrafts(prev => ({ ...prev, [productId]: String(stock) }));
+    cancelEditProduct();
   };
 
   const handleSupportStatusUpdate = async (requestId: string) => {
@@ -926,6 +1357,8 @@ export default function StaffDashboardPage() {
 
   const productMenuItems: Array<{ id: StaffTab; label: string }> = [
     { id: 'products_list', label: 'Danh sách sản phẩm' },
+    { id: 'new_products', label: 'Sản phẩm mới' },
+    { id: 'featured_products', label: 'Sản phẩm nổi bật' },
     { id: 'inventory', label: 'Quản lý kho' },
     { id: 'purchase_orders', label: 'Đặt hàng nhập' },
     { id: 'goods_receipt', label: 'Nhập hàng' },
@@ -939,6 +1372,8 @@ export default function StaffDashboardPage() {
     overview: 'Admin Dashboard',
     orders: 'Đơn hàng',
     products_list: 'Danh sách sản phẩm',
+    new_products: 'Sản phẩm mới',
+    featured_products: 'Sản phẩm nổi bật',
     inventory: 'Quản lý kho',
     purchase_orders: 'Đặt hàng nhập',
     goods_receipt: 'Nhập hàng',
@@ -1335,29 +1770,52 @@ export default function StaffDashboardPage() {
                     <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-3">
                       <input value={newProduct.name} onChange={event => setNewProduct(prev => ({ ...prev, name: event.target.value }))} placeholder="Tên sản phẩm *" className="h-10 px-3 border border-slate-200 rounded-lg text-sm bg-white" />
                       <input value={newProduct.slug} onChange={event => setNewProduct(prev => ({ ...prev, slug: event.target.value }))} placeholder="Slug (để trống tự tạo)" className="h-10 px-3 border border-slate-200 rounded-lg text-sm bg-white" />
-                      <select value={newProduct.category_id} onChange={event => setNewProduct(prev => ({ ...prev, category_id: event.target.value }))} className="h-10 px-3 border border-slate-200 rounded-lg text-sm bg-white">
+                      <select
+                        value={newProduct.category_id}
+                        onChange={event => {
+                          const nextCategoryId = event.target.value;
+                          const nextCategory = categories.find(item => item.id === nextCategoryId);
+                          const nextSizeType = (nextCategory?.size_type || 'none') as CategorySizeType;
+                          const allowedSizes = getAllowedSizesByType(nextSizeType).join(', ');
+                          setNewProduct(prev => ({
+                            ...prev,
+                            category_id: nextCategoryId,
+                            size_type: nextSizeType !== 'none' ? nextSizeType : prev.size_type,
+                            size_options: allowedSizes || prev.size_options,
+                          }));
+                        }}
+                        className="h-10 px-3 border border-slate-200 rounded-lg text-sm bg-white"
+                      >
                         <option value="">Chọn danh mục *</option>
                         {categories.map(category => <option key={category.id} value={category.id}>{category.name}</option>)}
                       </select>
                       <input value={newProduct.brand} onChange={event => setNewProduct(prev => ({ ...prev, brand: event.target.value }))} placeholder="Nhãn hiệu" className="h-10 px-3 border border-slate-200 rounded-lg text-sm bg-white" />
                     </div>
 
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                    <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
                       <input
                         type="text"
                         inputMode="numeric"
                         value={formatVndInput(newProduct.price)}
                         onChange={event => setNewProduct(prev => ({ ...prev, price: normalizeVndInput(event.target.value) }))}
-                        placeholder="Giá bán * (VNĐ)"
+                        placeholder="Giá gốc * (VNĐ)"
+                        className="h-10 px-3 border border-slate-200 rounded-lg text-sm bg-white"
+                      />
+                      <input
+                        type="number"
+                        min={0}
+                        max={99}
+                        value={newProduct.discount_percent}
+                        onChange={event => setNewProduct(prev => ({ ...prev, discount_percent: normalizePercentInput(event.target.value) }))}
+                        placeholder="Giảm giá (%)"
                         className="h-10 px-3 border border-slate-200 rounded-lg text-sm bg-white"
                       />
                       <input
                         type="text"
-                        inputMode="numeric"
-                        value={formatVndInput(newProduct.original_price)}
-                        onChange={event => setNewProduct(prev => ({ ...prev, original_price: normalizeVndInput(event.target.value) }))}
-                        placeholder="Giá so sánh (VNĐ)"
-                        className="h-10 px-3 border border-slate-200 rounded-lg text-sm bg-white"
+                        readOnly
+                        value={formatVndInput(String(newProductFinalPrice))}
+                        placeholder="Giá bán sau giảm (VNĐ)"
+                        className="h-10 px-3 border border-slate-200 rounded-lg text-sm bg-slate-100 text-slate-700"
                       />
                       <input type="number" min={0} value={newProduct.stock} onChange={event => setNewProduct(prev => ({ ...prev, stock: event.target.value }))} placeholder="Tồn kho *" className="h-10 px-3 border border-slate-200 rounded-lg text-sm bg-white" />
                     </div>
@@ -1379,13 +1837,81 @@ export default function StaffDashboardPage() {
                       </div>
                       <textarea rows={2} value={newProduct.description} onChange={event => setNewProduct(prev => ({ ...prev, description: event.target.value }))} placeholder="Mô tả sản phẩm" className="px-3 py-2 border border-slate-200 rounded-lg text-sm bg-white resize-none" />
                     </div>
-
-                    <div className="flex items-center gap-3">
-                      <label className="inline-flex items-center gap-2 text-sm text-slate-700">
-                        <input type="checkbox" checked={newProduct.featured} onChange={event => setNewProduct(prev => ({ ...prev, featured: event.target.checked }))} className="w-4 h-4" />
-                        Đánh dấu sản phẩm nổi bật
+                    <div className="space-y-2">
+                      <label className="inline-flex items-center gap-2 text-blue-600 font-medium cursor-pointer text-sm">
+                        <ImagePlus className="w-4 h-4" />
+                        <span>Thêm ảnh phụ (chọn nhiều ảnh)</span>
+                        <input
+                          type="file"
+                          accept="image/*"
+                          multiple
+                          onChange={event => handleProductGalleryChange(event, 'new')}
+                          className="hidden"
+                        />
                       </label>
+                      {newProductGalleryUrls.length > 0 && (
+                        <div className="flex flex-wrap gap-2">
+                          {newProductGalleryUrls.map((url, index) => (
+                            <div key={url} className="relative">
+                              <img src={url} alt={`gallery-${index}`} className="w-14 h-14 rounded-lg object-cover border border-slate-200" />
+                              <button
+                                type="button"
+                                onClick={() => removeGalleryImage('new', url)}
+                                className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-rose-500 text-white text-[10px] leading-4"
+                                title="Xóa ảnh"
+                              >
+                                x
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                      {newProductGalleryNames.length > 0 && (
+                        <p className="text-xs text-slate-500 truncate">{newProductGalleryNames.join(' | ')}</p>
+                      )}
                     </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                      <select
+                        value={newProduct.size_type}
+                        onChange={event => setNewProduct(prev => ({ ...prev, size_type: event.target.value as CategorySizeType }))}
+                        className="h-10 px-3 border border-slate-200 rounded-lg text-sm bg-white"
+                      >
+                        <option value="none">Loại size: Không áp dụng</option>
+                        <option value="shoes">1. Giày dép</option>
+                        <option value="apparel">2. Quần áo</option>
+                      </select>
+                      <div className="h-10 px-3 border border-slate-200 rounded-lg text-xs bg-white flex items-center text-slate-500">
+                        {selectedProductSizeType === 'shoes' && 'Giày dép: chỉ size số 36-42'}
+                        {selectedProductSizeType === 'apparel' && 'Quần áo: chỉ size chữ S, M, L, XL, 2XL'}
+                        {selectedProductSizeType === 'none' && 'Chưa áp dụng quy tắc size'}
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                      <input
+                        value={newProduct.color_options}
+                        onChange={event => setNewProduct(prev => ({ ...prev, color_options: event.target.value }))}
+                        placeholder="Màu sắc (VD: Đen/Đỏ, Xanh Navy, Xám/Bạc)"
+                        className="h-10 px-3 border border-slate-200 rounded-lg text-sm bg-white"
+                      />
+                      <input
+                        value={newProduct.size_options}
+                        onChange={event => setNewProduct(prev => ({ ...prev, size_options: event.target.value }))}
+                        placeholder="Size (tự theo danh mục)"
+                        className="h-10 px-3 border border-slate-200 rounded-lg text-sm bg-white"
+                        disabled={selectedProductSizeType !== 'none'}
+                      />
+                    </div>
+                    <p className="text-xs text-slate-500">
+                      {selectedProductSizeType === 'shoes' && 'Sản phẩm giày dép chỉ nhận size số: 36-42.'}
+                      {selectedProductSizeType === 'apparel' && 'Sản phẩm quần áo chỉ nhận size chữ: S, M, L, XL, 2XL.'}
+                      {selectedProductSizeType === 'none' && 'Chọn loại size 1 hoặc 2 để hệ thống tự chuẩn hóa size.'}
+                    </p>
+
+                    <p className="text-xs text-slate-500">
+                      Sản phẩm mới mặc định chưa nổi bật. Muốn gắn nổi bật, hãy vào mục Sửa sản phẩm.
+                    </p>
 
                     <div className="pt-2 border-t border-slate-200 flex justify-end">
                       <button
@@ -1400,14 +1926,195 @@ export default function StaffDashboardPage() {
 
                   <div className="space-y-3">
                     {visibleProducts.map(product => (
-                      <div key={product.id} className="border border-slate-100 rounded-xl p-4 flex flex-wrap items-center justify-between gap-3">
-                        <div>
-                          <p className="font-semibold text-slate-900">{product.name}</p>
-                          <p className="text-sm text-slate-500">{product.brand} - {formatPrice(product.price)}</p>
-                        </div>
-                        <div className="text-sm text-slate-600">
-                          Tồn kho: <span className="font-semibold text-slate-900">{product.stock}</span>
-                        </div>
+                      <div key={product.id} className="border border-slate-100 rounded-xl p-4 space-y-3">
+                        {editingProductId === product.id ? (
+                          <div className="space-y-3">
+                            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                              <input
+                                value={editProduct.name}
+                                onChange={event => setEditProduct(prev => ({ ...prev, name: event.target.value }))}
+                                placeholder="Tên sản phẩm *"
+                                className="h-10 px-3 border border-slate-200 rounded-lg text-sm"
+                              />
+                              <input
+                                value={editProduct.slug}
+                                onChange={event => setEditProduct(prev => ({ ...prev, slug: event.target.value }))}
+                                placeholder="Slug"
+                                className="h-10 px-3 border border-slate-200 rounded-lg text-sm"
+                              />
+                              <select
+                                value={editProduct.category_id}
+                                onChange={event => setEditProduct(prev => ({ ...prev, category_id: event.target.value }))}
+                                className="h-10 px-3 border border-slate-200 rounded-lg text-sm bg-white"
+                              >
+                                <option value="">Chọn danh mục *</option>
+                                {categories.map(category => <option key={category.id} value={category.id}>{category.name}</option>)}
+                              </select>
+                            </div>
+                            <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
+                              <input
+                                value={editProduct.brand}
+                                onChange={event => setEditProduct(prev => ({ ...prev, brand: event.target.value }))}
+                                placeholder="Thương hiệu"
+                                className="h-10 px-3 border border-slate-200 rounded-lg text-sm"
+                              />
+                              <input
+                                type="text"
+                                inputMode="numeric"
+                                value={formatVndInput(editProduct.price)}
+                                onChange={event => setEditProduct(prev => ({ ...prev, price: normalizeVndInput(event.target.value) }))}
+                                placeholder="Giá gốc"
+                                className="h-10 px-3 border border-slate-200 rounded-lg text-sm"
+                              />
+                              <input
+                                type="number"
+                                min={0}
+                                max={99}
+                                value={editProduct.discount_percent}
+                                onChange={event => setEditProduct(prev => ({ ...prev, discount_percent: normalizePercentInput(event.target.value) }))}
+                                placeholder="Giảm giá (%)"
+                                className="h-10 px-3 border border-slate-200 rounded-lg text-sm"
+                              />
+                              <input
+                                type="text"
+                                readOnly
+                                value={formatVndInput(String(editProductFinalPrice))}
+                                placeholder="Giá bán sau giảm"
+                                className="h-10 px-3 border border-slate-200 rounded-lg text-sm bg-slate-100 text-slate-700"
+                              />
+                            </div>
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                              <input
+                                type="number"
+                                min={0}
+                                value={editProduct.stock}
+                                onChange={event => setEditProduct(prev => ({ ...prev, stock: event.target.value }))}
+                                placeholder="Tồn kho"
+                                className="h-10 px-3 border border-slate-200 rounded-lg text-sm"
+                              />
+                              <button
+                                type="button"
+                                onClick={() => setEditProduct(prev => ({ ...prev, featured: !prev.featured }))}
+                                className={`h-10 px-3 rounded-lg text-sm font-medium border ${
+                                  editProduct.featured
+                                    ? 'border-amber-300 bg-amber-50 text-amber-800'
+                                    : 'border-slate-200 bg-white text-slate-700'
+                                }`}
+                              >
+                                {editProduct.featured ? 'Đang là sản phẩm nổi bật' : 'Đặt làm sản phẩm nổi bật'}
+                              </button>
+                            </div>
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                              <select
+                                value={editProduct.size_type}
+                                onChange={event => setEditProduct(prev => ({ ...prev, size_type: event.target.value as CategorySizeType }))}
+                                className="h-10 px-3 border border-slate-200 rounded-lg text-sm bg-white"
+                              >
+                                <option value="none">Loại size: Không áp dụng</option>
+                                <option value="shoes">1. Giày dép</option>
+                                <option value="apparel">2. Quần áo</option>
+                              </select>
+                              <input
+                                value={editProduct.size_options}
+                                onChange={event => setEditProduct(prev => ({ ...prev, size_options: event.target.value }))}
+                                placeholder="Size"
+                                className="h-10 px-3 border border-slate-200 rounded-lg text-sm"
+                                disabled={editProduct.size_type !== 'none'}
+                              />
+                            </div>
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                              <input
+                                value={editProduct.color_options}
+                                onChange={event => setEditProduct(prev => ({ ...prev, color_options: event.target.value }))}
+                                placeholder="Màu sắc"
+                                className="h-10 px-3 border border-slate-200 rounded-lg text-sm"
+                              />
+                              <div className="h-10 px-3 border border-slate-200 rounded-lg text-sm bg-white flex items-center justify-between gap-3">
+                                <label className="inline-flex items-center gap-2 text-blue-600 font-medium cursor-pointer">
+                                  <span>Đổi ảnh</span>
+                                  <input type="file" accept="image/*" onChange={handleEditProductImageChange} className="hidden" />
+                                </label>
+                                <span className="text-xs text-slate-500 truncate">{editProductImageName || 'Giữ ảnh hiện tại'}</span>
+                              </div>
+                            </div>
+                            <div className="space-y-2">
+                              <label className="inline-flex items-center gap-2 text-blue-600 font-medium cursor-pointer text-sm">
+                                <ImagePlus className="w-4 h-4" />
+                                <span>Thêm ảnh phụ (chọn nhiều ảnh)</span>
+                                <input
+                                  type="file"
+                                  accept="image/*"
+                                  multiple
+                                  onChange={event => handleProductGalleryChange(event, 'edit')}
+                                  className="hidden"
+                                />
+                              </label>
+                              {editProductGalleryUrls.length > 0 && (
+                                <div className="flex flex-wrap gap-2">
+                                  {editProductGalleryUrls.map((url, index) => (
+                                    <div key={url} className="relative">
+                                      <img src={url} alt={`edit-gallery-${index}`} className="w-14 h-14 rounded-lg object-cover border border-slate-200" />
+                                      <button
+                                        type="button"
+                                        onClick={() => removeGalleryImage('edit', url)}
+                                        className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-rose-500 text-white text-[10px] leading-4"
+                                        title="Xóa ảnh"
+                                      >
+                                        x
+                                      </button>
+                                    </div>
+                                  ))}
+                                </div>
+                              )}
+                              {editProductGalleryNames.length > 0 && (
+                                <p className="text-xs text-slate-500 truncate">{editProductGalleryNames.join(' | ')}</p>
+                              )}
+                            </div>
+                            <textarea
+                              rows={2}
+                              value={editProduct.description}
+                              onChange={event => setEditProduct(prev => ({ ...prev, description: event.target.value }))}
+                              placeholder="Mô tả"
+                              className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm resize-none"
+                            />
+                            <div className="flex items-center gap-2">
+                              <button
+                                onClick={() => handleUpdateProduct(product.id)}
+                                disabled={submitting}
+                                className="px-4 py-2 rounded-lg text-sm font-medium text-white bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50"
+                              >
+                                <Save className="w-4 h-4 inline mr-1" />
+                                Lưu
+                              </button>
+                              <button
+                                onClick={cancelEditProduct}
+                                className="px-4 py-2 rounded-lg text-sm font-medium text-slate-600 bg-slate-100 hover:bg-slate-200"
+                              >
+                                <X className="w-4 h-4 inline mr-1" />
+                                Hủy
+                              </button>
+                            </div>
+                          </div>
+                        ) : (
+                          <div className="flex flex-wrap items-center justify-between gap-3">
+                            <div>
+                              <p className="font-semibold text-slate-900">{product.name}</p>
+                              <p className="text-sm text-slate-500">{product.brand} - {formatPrice(product.price)}</p>
+                            </div>
+                            <div className="flex items-center gap-3">
+                              <div className="text-sm text-slate-600">
+                                Tồn kho: <span className="font-semibold text-slate-900">{product.stock}</span>
+                              </div>
+                              <button
+                                onClick={() => startEditProduct(product)}
+                                className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium text-blue-700 bg-blue-50 hover:bg-blue-100"
+                              >
+                                <Pencil className="w-4 h-4" />
+                                Sửa
+                              </button>
+                            </div>
+                          </div>
+                        )}
                       </div>
                     ))}
                   </div>
@@ -1418,35 +2125,122 @@ export default function StaffDashboardPage() {
                 <>
                   <h2 className="text-lg font-bold text-slate-900">Quản lý kho</h2>
                   <div className="space-y-3">
-                    {visibleProducts.map(product => (
-                      <div key={product.id} className="border border-slate-100 rounded-xl p-4 flex flex-wrap items-center justify-between gap-3">
-                        <div>
-                          <p className="font-semibold text-slate-900">{product.name}</p>
-                          <p className="text-sm text-slate-500">SKU: {product.slug} • {product.brand}</p>
+                    {visibleProducts.map(product => {
+                      const sizeOptions = getProductSizeOptions(product);
+                      const selectedSize = inventorySizeDrafts[product.id] || sizeOptions[0] || '';
+                      const sizeStockMap = parseSizeStockMap(product.size_stock);
+                      const draftKey = selectedSize ? `${product.id}::${selectedSize}` : product.id;
+                      const stockValue = stockDrafts[draftKey]
+                        ?? (selectedSize ? String(sizeStockMap[selectedSize] ?? 0) : String(product.stock));
+                      return (
+                        <div key={product.id} className="border border-slate-100 rounded-xl p-4 flex flex-wrap items-center justify-between gap-3">
+                          <div>
+                            <p className="font-semibold text-slate-900">{product.name}</p>
+                            <p className="text-sm text-slate-500">SKU: {product.slug} • {product.brand}</p>
+                            {sizeOptions.length > 0 && (
+                              <p className="text-xs text-slate-500 mt-1">Size khả dụng: {sizeOptions.join(', ')}</p>
+                            )}
+                          </div>
+                          <div className="flex items-center gap-2">
+                            {sizeOptions.length > 0 && (
+                              <select
+                                value={selectedSize}
+                                onChange={event => setInventorySizeDrafts(prev => ({ ...prev, [product.id]: event.target.value }))}
+                                className="h-10 px-3 border border-slate-200 rounded-lg text-sm bg-white"
+                              >
+                                {sizeOptions.map(size => (
+                                  <option key={size} value={size}>Size {size}</option>
+                                ))}
+                              </select>
+                            )}
+                            <input
+                              type="number"
+                              min={0}
+                              value={stockValue}
+                              onChange={event => setStockDrafts(prev => ({ ...prev, [draftKey]: event.target.value }))}
+                              className="w-28 h-10 px-3 border border-slate-200 rounded-lg text-sm"
+                            />
+                            <button
+                              onClick={() => handleUpdateStock(product.id, selectedSize || null)}
+                              disabled={submitting}
+                              className="px-3 py-2 rounded-lg text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 disabled:opacity-50"
+                            >
+                              Lưu tồn kho
+                            </button>
+                          </div>
                         </div>
-                        <div className="flex items-center gap-2">
-                          <input
-                            type="number"
-                            min={0}
-                            value={stockDrafts[product.id] ?? String(product.stock)}
-                            onChange={event => setStockDrafts(prev => ({ ...prev, [product.id]: event.target.value }))}
-                            className="w-28 h-10 px-3 border border-slate-200 rounded-lg text-sm"
-                          />
-                          <button
-                            onClick={() => handleUpdateStock(product.id)}
-                            disabled={submitting}
-                            className="px-3 py-2 rounded-lg text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 disabled:opacity-50"
-                          >
-                            Lưu tồn kho
-                          </button>
-                        </div>
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 </>
               )}
 
-              {!['products_list', 'inventory'].includes(activeTab) && (
+              {activeTab === 'new_products' && (
+                <>
+                  <div className="flex items-center justify-between gap-3">
+                    <h2 className="text-lg font-bold text-slate-900">Sản phẩm mới</h2>
+                    <span className="text-xs text-slate-500">Chỉ gồm sản phẩm trong 7 ngày gần nhất</span>
+                  </div>
+                  <div className="space-y-3">
+                    {visibleNewProducts.map(product => (
+                      <div key={product.id} className="border border-slate-100 rounded-xl p-4 flex flex-wrap items-center justify-between gap-3">
+                        <div>
+                          <p className="font-semibold text-slate-900">{product.name}</p>
+                          <p className="text-sm text-slate-500">{product.brand} - {formatPrice(product.price)}</p>
+                          <p className="text-xs text-slate-400 mt-1">Tạo lúc: {formatDate(product.created_at)}</p>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <button
+                            onClick={() => {
+                              startEditProduct(product);
+                              handleTabChange('products_list');
+                            }}
+                            className="px-3 py-2 rounded-lg text-sm font-medium text-blue-700 bg-blue-50 hover:bg-blue-100"
+                          >
+                            Sửa nhanh
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                    {visibleNewProducts.length === 0 && <p className="text-sm text-slate-500">Chưa có sản phẩm nào.</p>}
+                  </div>
+                </>
+              )}
+
+              {activeTab === 'featured_products' && (
+                <>
+                  <div className="flex items-center justify-between gap-3">
+                    <h2 className="text-lg font-bold text-slate-900">Sản phẩm nổi bật</h2>
+                    <span className="text-xs text-slate-500">Quản lý danh sách hiển thị ưu tiên</span>
+                  </div>
+                  <div className="space-y-3">
+                    {visibleFeaturedProducts.map(product => (
+                      <div key={product.id} className="border border-slate-100 rounded-xl p-4 flex flex-wrap items-center justify-between gap-3">
+                        <div>
+                          <p className="font-semibold text-slate-900">{product.name}</p>
+                          <p className="text-sm text-slate-500">{product.brand} - {formatPrice(product.price)}</p>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <button
+                            onClick={() => {
+                              startEditProduct(product);
+                              handleTabChange('products_list');
+                            }}
+                            className="px-3 py-2 rounded-lg text-sm font-medium text-blue-700 bg-blue-50 hover:bg-blue-100"
+                          >
+                            Sửa nhanh
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                    {visibleFeaturedProducts.length === 0 && (
+                      <p className="text-sm text-slate-500">Chưa có sản phẩm nổi bật nào.</p>
+                    )}
+                  </div>
+                </>
+              )}
+
+              {!['products_list', 'inventory', 'new_products', 'featured_products'].includes(activeTab) && (
                 <div className="rounded-xl border border-dashed border-slate-300 bg-slate-50 p-6">
                   <h3 className="text-base font-semibold text-slate-900 mb-2">{tabLabelMap[activeTab]}</h3>
                   <p className="text-sm text-slate-600">
@@ -1482,6 +2276,22 @@ export default function StaffDashboardPage() {
                     placeholder="Mô tả"
                     className="h-10 px-3 border border-slate-200 rounded-lg text-sm bg-white"
                   />
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  <select
+                    value={newCategorySizeType}
+                    onChange={event => setNewCategorySizeType(event.target.value as CategorySizeType)}
+                    className="h-10 px-3 border border-slate-200 rounded-lg text-sm bg-white"
+                  >
+                    <option value="none">Không áp dụng size cố định</option>
+                    <option value="shoes">Giày dép (size 36-42)</option>
+                    <option value="apparel">Quần áo (size S-2XL)</option>
+                  </select>
+                  <div className="h-10 px-3 border border-slate-200 rounded-lg text-xs bg-white flex items-center text-slate-500">
+                    {newCategorySizeType === 'shoes' && 'Rule: 36, 37, 38, 39, 40, 41, 42'}
+                    {newCategorySizeType === 'apparel' && 'Rule: S, M, L, XL, 2XL'}
+                    {newCategorySizeType === 'none' && 'Rule: chưa cấu hình size'}
+                  </div>
                 </div>
                 <div className="flex items-center gap-4">
                   <label className="inline-flex items-center gap-2 px-4 py-2 border border-dashed border-slate-300 rounded-lg text-sm text-blue-600 font-medium cursor-pointer hover:bg-blue-50 transition-colors">
@@ -1530,6 +2340,22 @@ export default function StaffDashboardPage() {
                             className="h-10 px-3 border border-slate-200 rounded-lg text-sm"
                           />
                         </div>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                          <select
+                            value={editCategorySizeType}
+                            onChange={event => setEditCategorySizeType(event.target.value as CategorySizeType)}
+                            className="h-10 px-3 border border-slate-200 rounded-lg text-sm bg-white"
+                          >
+                            <option value="none">Không áp dụng size cố định</option>
+                            <option value="shoes">Giày dép (size 36-42)</option>
+                            <option value="apparel">Quần áo (size S-2XL)</option>
+                          </select>
+                          <div className="h-10 px-3 border border-slate-200 rounded-lg text-xs bg-white flex items-center text-slate-500">
+                            {editCategorySizeType === 'shoes' && 'Rule: 36, 37, 38, 39, 40, 41, 42'}
+                            {editCategorySizeType === 'apparel' && 'Rule: S, M, L, XL, 2XL'}
+                            {editCategorySizeType === 'none' && 'Rule: chưa cấu hình size'}
+                          </div>
+                        </div>
                         <div className="flex items-center gap-4">
                           <label className="inline-flex items-center gap-2 px-3 py-1.5 border border-dashed border-slate-300 rounded-lg text-sm text-blue-600 font-medium cursor-pointer hover:bg-blue-50 transition-colors">
                             <ImagePlus className="w-4 h-4" />
@@ -1572,6 +2398,11 @@ export default function StaffDashboardPage() {
                           <p className="font-semibold text-slate-900">{category.name}</p>
                           <p className="text-xs text-slate-500">{category.slug}</p>
                           {category.description && <p className="text-xs text-slate-400 mt-0.5 truncate">{category.description}</p>}
+                          <p className="text-xs text-slate-500 mt-1">
+                            {category.size_type === 'shoes' && 'Size: 36-42 (Giày dép)'}
+                            {category.size_type === 'apparel' && 'Size: S-2XL (Quần áo)'}
+                            {(!category.size_type || category.size_type === 'none') && 'Size: chưa cấu hình'}
+                          </p>
                         </div>
                         <div className="flex items-center gap-2 flex-shrink-0">
                           <button

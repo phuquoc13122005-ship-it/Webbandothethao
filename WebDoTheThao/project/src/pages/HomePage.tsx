@@ -8,6 +8,8 @@ import { db } from '../lib/db';
 import type { Product, Category } from '../types';
 import ProductCard from '../components/ui/ProductCard';
 
+const NEW_PRODUCT_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
+
 let homePageCache: {
   featured: Product[];
   categories: Category[];
@@ -28,14 +30,20 @@ export default function HomePage() {
       const [featuredRes, catRes, productsRes] = await Promise.all([
         db.from('products').select('*').eq('featured', true).limit(4),
         db.from('categories').select('*').order('created_at'),
-        db.from('products').select('*').order('created_at', { ascending: false }).limit(8),
+        db.from('products').select('*').order('created_at', { ascending: false }).limit(60),
       ]);
 
       if (!active) return;
 
       const nextFeatured = featuredRes.data || [];
       const nextCategories = catRes.data || [];
-      const nextAllProducts = productsRes.data || [];
+      const now = Date.now();
+      const nextAllProducts = (productsRes.data || [])
+        .filter((product: Product) => {
+          const createdAtMs = new Date(product.created_at || '').getTime();
+          return Number.isFinite(createdAtMs) && now - createdAtMs <= NEW_PRODUCT_WINDOW_MS;
+        })
+        .slice(0, 8);
 
       setFeatured(nextFeatured);
       setCategories(nextCategories);

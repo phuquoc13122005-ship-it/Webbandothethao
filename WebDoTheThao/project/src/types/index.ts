@@ -4,6 +4,8 @@ export interface Category {
   slug: string;
   description: string;
   image_url: string;
+  size_type?: 'none' | 'apparel' | 'shoes';
+  size_values?: string;
   created_at: string;
 }
 
@@ -21,6 +23,11 @@ export interface Product {
   reviews_count: number;
   stock: number;
   featured: boolean;
+  size_type?: 'none' | 'apparel' | 'shoes';
+  color_options?: string;
+  size_options?: string;
+  size_stock?: string;
+  image_gallery?: string;
   created_at: string;
   categories?: Category;
 }
