@@ -1,17 +1,26 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { ArrowLeft, ArrowRight, Dumbbell, Eye, EyeOff, X } from 'lucide-react';
+import { db } from '../lib/db';
+import { useAuth } from '../contexts/AuthContext';
 
-function getAuthServerBaseUrl() {
-  const configuredUrl = import.meta.env.VITE_AUTH_SERVER_URL;
-  if (configuredUrl && configuredUrl.trim()) {
-    return configuredUrl.replace(/\/$/, '');
-  }
-  return 'http://localhost:4000';
+function formatAuthError(err: unknown): string {
+  if (err == null) return 'Không thể hoàn tất thao tác.';
+  const msg = typeof err === 'string' ? err : (err as { message?: string }).message;
+  const map: Record<string, string> = {
+    EMAIL_INVALID: 'Email không hợp lệ.',
+    USER_NOT_FOUND: 'Không tìm thấy tài khoản với email này.',
+    INVALID_OTP: 'Mã xác minh không đúng hoặc đã hết hạn.',
+    INVALID_PASSWORD: 'Mật khẩu không hợp lệ.',
+    UNAUTHENTICATED: 'Phiên không hợp lệ. Vui lòng gửi mã và xác minh lại.',
+    'Request failed': 'Không kết nối được máy chủ. Hãy chạy API (npm run dev:auth) và kiểm tra VITE_AUTH_SERVER_URL.',
+  };
+  return map[msg || ''] || msg || 'Không thể hoàn tất thao tác.';
 }
 
 export default function ForgotPasswordPage() {
   const navigate = useNavigate();
+  const { signOut } = useAuth();
   const [email, setEmail] = useState('');
   const [otpCode, setOtpCode] = useState('');
   const [password, setPassword] = useState('');
@@ -26,7 +35,7 @@ export default function ForgotPasswordPage() {
   const [codeSent, setCodeSent] = useState(false);
   const [codeVerified, setCodeVerified] = useState(false);
   const [countdown, setCountdown] = useState(0);
-  const [resetToken, setResetToken] = useState('');
+  const prevOtpLenRef = useRef(0);
 
   const [error, setError] = useState('');
   const [info, setInfo] = useState('');
@@ -38,35 +47,38 @@ export default function ForgotPasswordPage() {
 
   const handleSendCode = async (event: React.FormEvent) => {
     event.preventDefault();
-    if (!email.trim()) {
+    const trimmedEmail = email.trim();
+    if (!trimmedEmail) {
       setError('Vui lòng nhập email.');
+      return;
+    }
+    if (!trimmedEmail.includes('@')) {
+      setError('Vui lòng nhập địa chỉ email hợp lệ (hệ thống gửi mã qua email).');
       return;
     }
 
     setError('');
     setInfo('');
     setSendingCode(true);
-
-    const response = await fetch(`${getAuthServerBaseUrl()}/auth/password/send-code`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      credentials: 'include',
-      body: JSON.stringify({ email: email.trim() }),
-    });
-    const payload = await response.json().catch(() => ({}));
-
-    setSendingCode(false);
-    if (!response.ok) {
-      setError(payload?.error || 'Không thể gửi mã xác minh.');
-      return;
+    try {
+      const { error: sendError } = await db.auth.signInWithOtp({ email: trimmedEmail });
+      if (sendError) {
+        setError(formatAuthError(sendError));
+        return;
+      }
+      setCodeSent(true);
+      setCodeVerified(false);
+      prevOtpLenRef.current = 0;
+      setOtpCode('');
+      setCountdown(60);
+      setInfo('Mã xác minh đã được gửi về email của bạn.');
+    } catch {
+      setError(
+        'Không kết nối được máy chủ. Hãy chạy API (npm run dev:auth) và kiểm tra biến VITE_AUTH_SERVER_URL.',
+      );
+    } finally {
+      setSendingCode(false);
     }
-
-    setCodeSent(true);
-    setCodeVerified(false);
-    setResetToken('');
-    setOtpCode('');
-    setCountdown(60);
-    setInfo('Mã xác minh đã được gửi về email của bạn.');
   };
 
   useEffect(() => {
@@ -78,45 +90,46 @@ export default function ForgotPasswordPage() {
   }, [countdown]);
 
   useEffect(() => {
-    const verifyCode = async () => {
-      if (!codeSent || codeVerified || verifyingCode) return;
-      if (otpCode.trim().length < 6) return;
+    const digits = otpCode.replace(/\D/g, '').slice(0, 6);
+    const len = digits.length;
+    const crossedToSix = prevOtpLenRef.current < 6 && len === 6;
+    prevOtpLenRef.current = len;
 
+    if (!codeSent || codeVerified || verifyingCode || !crossedToSix) return;
+
+    const run = async () => {
       setVerifyingCode(true);
       setError('');
       setInfo('');
-      const response = await fetch(`${getAuthServerBaseUrl()}/auth/password/verify-code`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify({ email: email.trim(), code: otpCode.trim() }),
-      });
-      const payload = await response.json().catch(() => ({}));
-      setVerifyingCode(false);
-
-      if (!response.ok || !payload?.resetToken) {
+      try {
+        const { error: verifyError } = await db.auth.verifyOtp({
+          email: email.trim(),
+          token: digits,
+        });
+        if (verifyError) {
+          setCodeVerified(false);
+          setError(formatAuthError(verifyError));
+          return;
+        }
+        setCodeVerified(true);
+        setInfo('Xác minh thành công. Hãy nhập mật khẩu mới.');
+      } catch {
         setCodeVerified(false);
-        setResetToken('');
-        setError(payload?.error || 'Mã xác minh không hợp lệ hoặc đã hết hạn.');
-        return;
+        setError(
+          'Không kết nối được máy chủ. Hãy chạy API (npm run dev:auth) và kiểm tra VITE_AUTH_SERVER_URL.',
+        );
+      } finally {
+        setVerifyingCode(false);
       }
-
-      setCodeVerified(true);
-      setResetToken(payload.resetToken);
-      setInfo('Xác minh thành công. Hãy nhập mật khẩu mới.');
     };
 
-    verifyCode();
+    void run();
   }, [codeSent, codeVerified, email, otpCode, verifyingCode]);
 
   const handleResetPassword = async (event: React.FormEvent) => {
     event.preventDefault();
     if (!codeVerified) {
       setError('Vui lòng nhập đúng mã xác minh.');
-      return;
-    }
-    if (!resetToken) {
-      setError('Phiên xác minh không hợp lệ, vui lòng gửi mã lại.');
       return;
     }
 
@@ -133,26 +146,22 @@ export default function ForgotPasswordPage() {
     setError('');
     setInfo('');
     setSubmittingPassword(true);
-    const response = await fetch(`${getAuthServerBaseUrl()}/auth/password/reset`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      credentials: 'include',
-      body: JSON.stringify({
-        email: email.trim(),
-        newPassword: password,
-        resetToken,
-      }),
-    });
-    const payload = await response.json().catch(() => ({}));
-    setSubmittingPassword(false);
-
-    if (!response.ok) {
-      setError(payload?.error || 'Không thể đặt lại mật khẩu.');
-      return;
+    try {
+      const { error: updateError } = await db.auth.updateUser({ password });
+      if (updateError) {
+        setError(formatAuthError(updateError));
+        return;
+      }
+      await signOut();
+      window.alert('Đặt lại mật khẩu thành công. Vui lòng đăng nhập lại.');
+      navigate('/login', { replace: true });
+    } catch {
+      setError(
+        'Không kết nối được máy chủ. Hãy chạy API (npm run dev:auth) và kiểm tra VITE_AUTH_SERVER_URL.',
+      );
+    } finally {
+      setSubmittingPassword(false);
     }
-
-    window.alert('Đặt lại mật khẩu thành công. Vui lòng đăng nhập lại.');
-    navigate('/login', { replace: true });
   };
 
   return (
