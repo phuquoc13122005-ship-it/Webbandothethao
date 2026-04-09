@@ -1,57 +1,145 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
   ArrowRight, Truck, Shield, RotateCcw, Headphones,
-  ChevronRight, Flame, Tag,
+  ChevronRight, ChevronLeft, Flame, Tag,
 } from 'lucide-react';
 import { db } from '../lib/db';
-import type { Product, Category } from '../types';
+import type { Product, Category, Banner, CategoryProductGroup, HomeCategorySection } from '../types';
 import ProductCard from '../components/ui/ProductCard';
 
 const NEW_PRODUCT_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
+const HERO_SLIDE_INTERVAL_MS = 3000;
+const CATEGORY_GROUP_LABEL: Record<CategoryProductGroup, string> = {
+  badminton: 'cầu lông',
+  tennis: 'tennis',
+  pickleball: 'pickleball',
+  other: 'khác',
+};
+
+function parseCategoryIdsJson(rawValue?: string | null) {
+  if (!rawValue) return [] as string[];
+  try {
+    const parsed = JSON.parse(rawValue) as unknown;
+    if (!Array.isArray(parsed)) return [];
+    return parsed
+      .map(item => String(item || '').trim())
+      .filter(Boolean);
+  } catch {
+    return [];
+  }
+}
 
 let homePageCache: {
   featured: Product[];
   categories: Category[];
   allProducts: Product[];
+  banners: Banner[];
+  homeCategorySections: HomeCategorySection[];
 } | null = null;
 
 export default function HomePage() {
   const [featured, setFeatured] = useState<Product[]>(homePageCache?.featured || []);
   const [categories, setCategories] = useState<Category[]>(homePageCache?.categories || []);
   const [allProducts, setAllProducts] = useState<Product[]>(homePageCache?.allProducts || []);
+  const [banners, setBanners] = useState<Banner[]>(homePageCache?.banners || []);
+  const [homeCategorySections, setHomeCategorySections] = useState<HomeCategorySection[]>(homePageCache?.homeCategorySections || []);
   const [loading, setLoading] = useState(!homePageCache);
+  const [heroSlideIndex, setHeroSlideIndex] = useState(0);
+  const [newestCategoryFilter, setNewestCategoryFilter] = useState('all');
+  const tabsScrollRef = useRef<HTMLDivElement | null>(null);
+  const dragStateRef = useRef({ isDown: false, startX: 0, startScrollLeft: 0 });
+  const heroSlides = banners
+    .filter(item => {
+      const hasImage = Boolean(String(item.image_url || '').trim());
+      const isActive = item.is_active === undefined ? true : Boolean(Number(item.is_active));
+      return hasImage && isActive;
+    })
+    .sort((a, b) => Number(a.sort_order || 0) - Number(b.sort_order || 0));
+  const categorySlugById = useMemo(() => {
+    const map = new Map<string, string>();
+    categories.forEach(item => {
+      if (item.id && item.slug) map.set(item.id, item.slug);
+    });
+    return map;
+  }, [categories]);
+  const productSlugById = useMemo(() => {
+    const map = new Map<string, string>();
+    allProducts.forEach(item => {
+      if (item.id && item.slug) map.set(item.id, item.slug);
+    });
+    return map;
+  }, [allProducts]);
+
+  const getBannerTargetHref = (banner: Banner) => {
+    if (banner.target_type === 'product') {
+      const productSlug = String(
+        banner.target_product_slug
+        || (banner.target_product_id ? productSlugById.get(banner.target_product_id) : '')
+        || '',
+      ).trim();
+      return productSlug ? `/products/${productSlug}` : '/products';
+    }
+    if (banner.target_type === 'category') {
+      const categorySlug = String(
+        banner.target_category_slug
+        || (banner.target_category_id ? categorySlugById.get(banner.target_category_id) : '')
+        || '',
+      ).trim();
+      return categorySlug ? `/products?category=${encodeURIComponent(categorySlug)}` : '/products';
+    }
+    return '/products';
+  };
+
+  useEffect(() => {
+    if (heroSlides.length <= 1) return;
+    const timer = window.setInterval(() => {
+      setHeroSlideIndex(prev => (prev + 1) % heroSlides.length);
+    }, HERO_SLIDE_INTERVAL_MS);
+    return () => window.clearInterval(timer);
+  }, [heroSlides.length]);
+
+  useEffect(() => {
+    setHeroSlideIndex(prev => (heroSlides.length ? prev % heroSlides.length : 0));
+  }, [heroSlides.length]);
 
   useEffect(() => {
     let active = true;
 
     async function load() {
       if (!homePageCache) setLoading(true);
-      const [featuredRes, catRes, productsRes] = await Promise.all([
+      const [featuredRes, catRes, productsRes, bannersRes, sectionsRes] = await Promise.all([
         db.from('products').select('*').eq('featured', true).limit(4),
         db.from('categories').select('*').order('created_at'),
         db.from('products').select('*').order('created_at', { ascending: false }).limit(60),
+        db.from('banners').select('*').order('sort_order', { ascending: true }),
+        db.from('home_category_sections').select('*').eq('is_active', 1).order('sort_order', { ascending: true }),
       ]);
 
       if (!active) return;
 
       const nextFeatured = featuredRes.data || [];
       const nextCategories = catRes.data || [];
+      const nextBanners = (bannersRes.data || []) as Banner[];
+      const nextSections = (sectionsRes.data || []) as HomeCategorySection[];
       const now = Date.now();
       const nextAllProducts = (productsRes.data || [])
         .filter((product: Product) => {
           const createdAtMs = new Date(product.created_at || '').getTime();
           return Number.isFinite(createdAtMs) && now - createdAtMs <= NEW_PRODUCT_WINDOW_MS;
-        })
-        .slice(0, 8);
+        });
 
       setFeatured(nextFeatured);
       setCategories(nextCategories);
       setAllProducts(nextAllProducts);
+      setBanners(nextBanners);
+      setHomeCategorySections(nextSections);
       homePageCache = {
         featured: nextFeatured,
         categories: nextCategories,
         allProducts: nextAllProducts,
+        banners: nextBanners,
+        homeCategorySections: nextSections,
       };
       setLoading(false);
     }
@@ -62,6 +150,14 @@ export default function HomePage() {
     };
   }, []);
 
+  useEffect(() => {
+    if (newestCategoryFilter === 'all') return;
+    const categoryExists = categories.some(item => item.id === newestCategoryFilter);
+    if (!categoryExists) {
+      setNewestCategoryFilter('all');
+    }
+  }, [categories, newestCategoryFilter]);
+
   if (loading) {
     return (
       <div className="flex items-center justify-center min-h-[60vh]">
@@ -71,17 +167,86 @@ export default function HomePage() {
   }
 
   const displayFeatured = featured.length > 0 ? featured : allProducts.slice(0, 4);
+  const newestProductsByCategory = (newestCategoryFilter === 'all'
+    ? allProducts
+    : allProducts.filter(product => product.category_id === newestCategoryFilter))
+    .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+    .slice(0, 10);
+  const fallbackCategoryIds = categories
+    .filter(item => (item.product_group || 'badminton') === 'badminton')
+    .map(item => item.id);
+  const resolvedHomeSections = (homeCategorySections.length > 0
+    ? homeCategorySections
+    : [{
+        id: 'default-badminton',
+        title: `Sản phẩm ${CATEGORY_GROUP_LABEL.badminton}`,
+        product_group: 'badminton' as CategoryProductGroup,
+        categories_json: JSON.stringify(fallbackCategoryIds),
+      }])
+    .map(section => {
+      const selectedIds = parseCategoryIdsJson(section.categories_json);
+      const idsForRender = selectedIds.length > 0
+        ? selectedIds
+        : categories
+          .filter(item => (item.product_group || 'badminton') === (section.product_group || 'badminton'))
+          .map(item => item.id);
+      const renderCategories = idsForRender
+        .map(id => categories.find(item => item.id === id))
+        .filter(Boolean) as Category[];
+      return {
+        ...section,
+        renderCategories,
+      };
+    })
+    .filter(section => section.renderCategories.length > 0);
+
+  const handleTabsMouseDown = (event: React.MouseEvent<HTMLDivElement>) => {
+    const container = tabsScrollRef.current;
+    if (!container) return;
+    dragStateRef.current = {
+      isDown: true,
+      startX: event.pageX - container.offsetLeft,
+      startScrollLeft: container.scrollLeft,
+    };
+  };
+
+  const handleTabsMouseMove = (event: React.MouseEvent<HTMLDivElement>) => {
+    const container = tabsScrollRef.current;
+    if (!container || !dragStateRef.current.isDown) return;
+    event.preventDefault();
+    const currentX = event.pageX - container.offsetLeft;
+    const delta = currentX - dragStateRef.current.startX;
+    container.scrollLeft = dragStateRef.current.startScrollLeft - delta;
+  };
+
+  const handleTabsMouseUpOrLeave = () => {
+    dragStateRef.current.isDown = false;
+  };
 
   return (
     <div>
       <section className="relative overflow-hidden bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900">
         <div className="absolute inset-0">
-          <img
-            src="https://images.pexels.com/photos/3764014/pexels-photo-3764014.jpeg?auto=compress&cs=tinysrgb&w=1920"
-            alt="Hero"
-            className="w-full h-full object-cover opacity-30"
-          />
-          <div className="absolute inset-0 bg-gradient-to-r from-gray-900/90 via-gray-900/70 to-transparent" />
+          {heroSlides.map((slide, index) => (
+            <div
+              key={slide.id}
+              className={`absolute inset-0 transition-opacity duration-700 ${
+                index === heroSlideIndex ? 'opacity-30' : 'opacity-0'
+              }`}
+            >
+              <img
+                src={slide.image_url}
+                alt={slide.title || `Banner ${index + 1}`}
+                className="absolute inset-0 w-full h-full object-cover"
+              />
+              <Link
+                to={getBannerTargetHref(slide)}
+                aria-label={slide.title ? `Mở banner ${slide.title}` : `Mở banner ${index + 1}`}
+                className={`absolute inset-0 ${index === heroSlideIndex ? 'pointer-events-auto' : 'pointer-events-none'}`}
+              />
+            </div>
+          ))}
+          <div className="absolute inset-0 pointer-events-none bg-gradient-to-r from-gray-900/90 via-gray-900/70 to-transparent" />
         </div>
         <div className="relative max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-24 lg:py-36">
           <div className="max-w-2xl">
@@ -106,15 +271,42 @@ export default function HomePage() {
                 Mua sắm ngay
                 <ArrowRight className="w-5 h-5" />
               </Link>
-              <Link
-                to="/products?category=giay-the-thao"
-                className="inline-flex items-center gap-2 px-8 py-4 bg-white/10 backdrop-blur-sm text-white font-semibold rounded-2xl border border-white/20 hover:bg-white/20 transition-all"
-              >
-                Xem giày hot
-              </Link>
             </div>
           </div>
         </div>
+        {heroSlides.length > 1 && (
+          <>
+            <button
+              type="button"
+              onClick={() => setHeroSlideIndex(prev => (prev - 1 + heroSlides.length) % heroSlides.length)}
+              className="absolute left-4 sm:left-6 top-1/2 -translate-y-1/2 w-10 h-10 rounded-full bg-black/30 border border-white/20 text-white flex items-center justify-center hover:bg-black/50 transition-colors"
+              aria-label="Ảnh trước"
+            >
+              <ChevronLeft className="w-5 h-5" />
+            </button>
+            <button
+              type="button"
+              onClick={() => setHeroSlideIndex(prev => (prev + 1) % heroSlides.length)}
+              className="absolute right-4 sm:right-6 top-1/2 -translate-y-1/2 w-10 h-10 rounded-full bg-black/30 border border-white/20 text-white flex items-center justify-center hover:bg-black/50 transition-colors"
+              aria-label="Ảnh sau"
+            >
+              <ChevronRight className="w-5 h-5" />
+            </button>
+            <div className="absolute bottom-6 left-1/2 -translate-x-1/2 flex items-center gap-2">
+              {heroSlides.map((slide, index) => (
+                <button
+                  key={slide.id}
+                  type="button"
+                  onClick={() => setHeroSlideIndex(index)}
+                  className={`h-2.5 rounded-full transition-all ${
+                    index === heroSlideIndex ? 'w-7 bg-white' : 'w-2.5 bg-white/50 hover:bg-white/70'
+                  }`}
+                  aria-label={`Chuyển tới ảnh ${index + 1}`}
+                />
+              ))}
+            </div>
+          </>
+        )}
       </section>
 
       <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 -mt-12 relative z-10 mb-16">
@@ -141,40 +333,96 @@ export default function HomePage() {
       <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 mb-20">
         <div className="flex items-center justify-between mb-8">
           <div>
-            <h2 className="text-2xl font-bold text-gray-900">Danh mục sản phẩm</h2>
-            <p className="text-gray-500 mt-1">Khám phá các danh mục đồ thể thao</p>
+            <h2 className="text-2xl font-bold text-gray-900">Sản phẩm mới nhất</h2>
+            <p className="text-gray-500 mt-1">Cập nhật liên tục theo danh mục</p>
           </div>
           <Link to="/products" className="hidden sm:flex items-center gap-1 text-sm font-medium text-teal-600 hover:text-teal-700 transition-colors">
             Xem tất cả <ChevronRight className="w-4 h-4" />
           </Link>
         </div>
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-4">
-          {categories.map(cat => (
-            <Link
-              key={cat.id}
-              to={`/products?category=${cat.slug}`}
-              className="group relative aspect-[4/5] rounded-2xl overflow-hidden"
+        <div
+          ref={tabsScrollRef}
+          className="mb-4 bg-white border border-gray-200 rounded-xl overflow-x-auto cursor-grab active:cursor-grabbing select-none"
+          onMouseDown={handleTabsMouseDown}
+          onMouseMove={handleTabsMouseMove}
+          onMouseUp={handleTabsMouseUpOrLeave}
+          onMouseLeave={handleTabsMouseUpOrLeave}
+        >
+          <div className="min-w-max flex items-center">
+            <button
+              type="button"
+              onClick={() => setNewestCategoryFilter('all')}
+              className={`px-6 py-3 text-sm font-semibold border-r border-gray-200 transition-colors ${
+                newestCategoryFilter === 'all'
+                  ? 'bg-orange-500 text-white'
+                  : 'bg-white text-gray-700 hover:bg-orange-50'
+              }`}
             >
-              {cat.image_url ? (
-                <img
-                  src={cat.image_url}
-                  alt={cat.name}
-                  className="absolute inset-0 w-full h-full object-cover group-hover:scale-110 transition-transform duration-500"
-                />
-              ) : (
-                <div className="absolute inset-0 bg-gradient-to-br from-slate-200 to-slate-300 group-hover:from-slate-300 group-hover:to-slate-400 transition-colors" />
-              )}
-              <div className="absolute inset-0 bg-gradient-to-t from-gray-900/80 via-gray-900/20 to-transparent" />
-              <div className="absolute bottom-0 left-0 right-0 p-4">
-                <h3 className="text-sm font-semibold text-white">{cat.name}</h3>
-                <span className="mt-2 inline-flex items-center gap-1 rounded-full bg-white/20 px-3 py-1 text-xs font-medium text-white backdrop-blur-sm border border-white/25 group-hover:bg-white/30 transition-colors">
-                  Xem danh mục <ChevronRight className="w-3.5 h-3.5" />
-                </span>
-              </div>
-            </Link>
+              Tất cả
+            </button>
+            {categories.map(category => (
+              <button
+                key={category.id}
+                type="button"
+                onClick={() => setNewestCategoryFilter(category.id)}
+                className={`px-6 py-3 text-sm font-semibold border-r border-gray-200 transition-colors whitespace-nowrap ${
+                  newestCategoryFilter === category.id
+                    ? 'bg-orange-500 text-white'
+                    : 'bg-white text-gray-700 hover:bg-orange-50'
+                }`}
+              >
+                {category.name}
+              </button>
+            ))}
+          </div>
+        </div>
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 lg:gap-6">
+          {newestProductsByCategory.map(product => (
+            <ProductCard key={product.id} product={product} />
           ))}
         </div>
+        {newestProductsByCategory.length === 0 && (
+          <div className="mt-5 text-center text-sm text-gray-500">
+            Chưa có sản phẩm mới trong danh mục này.
+          </div>
+        )}
       </section>
+
+      {resolvedHomeSections.map(section => (
+        <section key={section.id} className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 mb-20">
+          <div className="text-center mb-8">
+            <h2 className="text-3xl font-bold text-orange-600">{section.title}</h2>
+            <div className="mt-3 flex justify-center">
+              <span className="w-24 h-1 rounded-full bg-orange-500" />
+            </div>
+          </div>
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 lg:gap-4">
+            {section.renderCategories.map(cat => (
+              <Link
+                key={cat.id}
+                to={`/products?category=${cat.slug}`}
+                className="group relative aspect-square overflow-hidden border-2 border-orange-300 bg-orange-200/60"
+              >
+                {cat.image_url ? (
+                  <img
+                    src={cat.image_url}
+                    alt={cat.name}
+                    className="absolute inset-0 w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+                  />
+                ) : (
+                  <div className="absolute inset-0 bg-gradient-to-br from-orange-300 via-amber-300 to-yellow-300" />
+                )}
+                <div className="absolute inset-0 bg-gradient-to-t from-black/35 via-transparent to-transparent" />
+                <div className="absolute left-1/2 top-[58%] -translate-x-1/2 -rotate-6 bg-orange-600/90 text-white px-4 py-2 min-w-[72%] text-center shadow-lg">
+                  <span className="text-sm sm:text-base font-semibold uppercase tracking-wide">
+                    {cat.name}
+                  </span>
+                </div>
+              </Link>
+            ))}
+          </div>
+        </section>
+      ))}
 
       <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 mb-20">
         <div className="flex items-center justify-between mb-8">
@@ -241,22 +489,6 @@ export default function HomePage() {
         </div>
       </section>
 
-      <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 mb-20">
-        <div className="flex items-center justify-between mb-8">
-          <div>
-            <h2 className="text-2xl font-bold text-gray-900">Sản phẩm mới nhất</h2>
-            <p className="text-gray-500 mt-1">Cập nhật liên tục</p>
-          </div>
-          <Link to="/products" className="hidden sm:flex items-center gap-1 text-sm font-medium text-teal-600 hover:text-teal-700 transition-colors">
-            Xem tất cả <ChevronRight className="w-4 h-4" />
-          </Link>
-        </div>
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 lg:gap-6">
-          {allProducts.map(product => (
-            <ProductCard key={product.id} product={product} />
-          ))}
-        </div>
-      </section>
     </div>
   );
 }

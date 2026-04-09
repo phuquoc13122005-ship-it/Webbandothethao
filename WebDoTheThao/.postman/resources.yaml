@@ -1,0 +1,13 @@
+# Use this workspace to collaborate
+workspace:
+  id: 8c201c32-12b9-4c4b-8055-308fcaddc1ff
+
+cloudResources:
+  collections:
+    ..\postman\collections\WebDoTheThao BE API Tests: 4b9861b0-369e-4572-bdd3-f9c81c6b3505
+
+# All resources in the `postman/` folder are automatically registered in Local View.
+# Point to additional files outside the `postman/` folder to register them individually. Example:
+#localResources:
+#  collections:
+#    - ../tests/E2E Test Collection/

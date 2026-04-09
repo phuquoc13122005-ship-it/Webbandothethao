@@ -24,6 +24,23 @@ interface ShippingForm {
   address: string;
 }
 
+interface AppliedPromotion {
+  assignmentId: string;
+  promotionCode: string;
+  discountPercent: number;
+  discountAmount: number;
+}
+
+interface AvailablePromotionItem {
+  assignment_id: string;
+  code: string;
+  name?: string;
+  discount_percent: number;
+  min_order: number;
+  can_apply: boolean;
+  disabled_reason?: string;
+}
+
 function createTransferReference(userId: string) {
   return `DH-${userId.slice(0, 6).toUpperCase()}-${Date.now().toString().slice(-6)}`;
 }
@@ -45,6 +62,12 @@ export default function CheckoutPage() {
   const [nowMs, setNowMs] = useState(() => Date.now());
   const [paymentReference, setPaymentReference] = useState('');
   const [transferConfirmed, setTransferConfirmed] = useState(false);
+  const [promotionCodeInput, setPromotionCodeInput] = useState('');
+  const [applyingPromotion, setApplyingPromotion] = useState(false);
+  const [promotionError, setPromotionError] = useState('');
+  const [appliedPromotion, setAppliedPromotion] = useState<AppliedPromotion | null>(null);
+  const [availablePromotions, setAvailablePromotions] = useState<AvailablePromotionItem[]>([]);
+  const [loadingAvailablePromotions, setLoadingAvailablePromotions] = useState(false);
 
   useEffect(() => {
     if (authLoading) return;
@@ -76,6 +99,8 @@ export default function CheckoutPage() {
     () => checkoutItems.reduce((sum, item) => sum + item.price * item.quantity, 0),
     [checkoutItems],
   );
+  const discountAmount = appliedPromotion ? Math.min(total, Number(appliedPromotion.discountAmount || 0)) : 0;
+  const payableTotal = Math.max(0, total - discountAmount);
   const bankCode = import.meta.env.VITE_VIETQR_BANK_CODE || '';
   const accountNo = import.meta.env.VITE_VIETQR_ACCOUNT_NO || '';
   const accountName = import.meta.env.VITE_VIETQR_ACCOUNT_NAME || '';
@@ -93,7 +118,7 @@ export default function CheckoutPage() {
     ? buildVietQrImageUrl({
         bankCode: effectiveBankCode,
         accountNo: effectiveAccountNo,
-        amount: total,
+        amount: payableTotal,
         description: paymentReference || 'THANH TOAN',
       })
     : '';
@@ -131,6 +156,85 @@ export default function CheckoutPage() {
     return Object.keys(nextErrors).length === 0;
   };
 
+  useEffect(() => {
+    let active = true;
+    if (!user || user.provider === 'google') {
+      setAvailablePromotions([]);
+      return () => {
+        active = false;
+      };
+    }
+    setLoadingAvailablePromotions(true);
+    db.getMyAvailablePromotions(total)
+      .then(({ data, error }) => {
+        if (!active) return;
+        if (error) {
+          setAvailablePromotions([]);
+          return;
+        }
+        setAvailablePromotions((data || []) as AvailablePromotionItem[]);
+      })
+      .finally(() => {
+        if (active) setLoadingAvailablePromotions(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, [user?.id, user?.provider, total]);
+
+  const handleApplyPromotion = async (overrideCode?: string) => {
+    if (!user || user.provider === 'google') {
+      setPromotionError('Tài khoản Google local chưa hỗ trợ áp mã ở bản này.');
+      return;
+    }
+    const code = String(overrideCode || promotionCodeInput).trim().toUpperCase();
+    if (!code) {
+      setPromotionError('Vui lòng nhập mã khuyến mãi.');
+      return;
+    }
+    setPromotionError('');
+    setApplyingPromotion(true);
+    const { data, error } = await db.applyPromotionPreview({
+      code,
+      orderSubtotal: total,
+    });
+    setApplyingPromotion(false);
+    if (error || !data) {
+      const errorCode = String(error?.message || '');
+      if (errorCode === 'PROMOTION_NOT_ASSIGNED') {
+        setPromotionError('Mã này chưa được phát cho tài khoản của bạn.');
+      } else if (errorCode === 'PROMOTION_ALREADY_USED') {
+        setPromotionError('Bạn đã sử dụng mã này trước đó.');
+      } else if (errorCode === 'ORDER_BELOW_MINIMUM') {
+        setPromotionError('Đơn hàng chưa đạt giá trị tối thiểu để dùng mã.');
+      } else if (errorCode === 'PROMOTION_EXPIRED') {
+        setPromotionError('Mã khuyến mãi đã hết hạn.');
+      } else if (errorCode === 'PROMOTION_INACTIVE') {
+        setPromotionError('Mã khuyến mãi chưa kích hoạt.');
+      } else if (errorCode === 'PROMOTION_NOT_FOUND') {
+        setPromotionError('Không tìm thấy mã khuyến mãi.');
+      } else {
+        setPromotionError(error?.message || 'Không thể áp dụng mã khuyến mãi.');
+      }
+      setAppliedPromotion(null);
+      return;
+    }
+
+    setAppliedPromotion({
+      assignmentId: String(data.assignment_id || ''),
+      promotionCode: String(data.code || code),
+      discountPercent: Number(data.discount_percent || 0),
+      discountAmount: Number(data.discount_amount || 0),
+    });
+    setPromotionCodeInput(String(data.code || code));
+    setPromotionError('');
+  };
+
+  const handleRemovePromotion = () => {
+    setAppliedPromotion(null);
+    setPromotionError('');
+  };
+
   const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (!user || checkoutItems.length === 0 || submitting) return;
@@ -166,7 +270,7 @@ export default function CheckoutPage() {
         prependGoogleOrder(user.id, {
           id: orderId,
           user_id: user.id,
-          total,
+          total: payableTotal,
           shipping_address: `${shippingAddress} (${paymentMethod === 'cod' ? 'COD' : 'Chuyển khoản'})`,
           status: 'pending',
           created_at: createdAt,
@@ -191,7 +295,9 @@ export default function CheckoutPage() {
       } else {
         await createCheckoutOrder(db, {
           userId: user.id,
-          total,
+          total: payableTotal,
+          subTotal: total,
+          promotionAssignmentId: appliedPromotion?.assignmentId || null,
           shippingAddress: `${shippingAddress} (${paymentMethod === 'cod' ? 'COD' : 'Chuyển khoản'})`,
           items: checkoutItems.map(item => ({
             product_id: item.product_id,
@@ -204,6 +310,8 @@ export default function CheckoutPage() {
 
       await clearCart();
       clearCheckoutDraft(user.id);
+      setAppliedPromotion(null);
+      setPromotionCodeInput('');
       navigate('/dashboard');
     } catch {
       window.alert('Thanh toán thất bại. Vui lòng thử lại.');
@@ -348,14 +456,90 @@ export default function CheckoutPage() {
                 <span className="text-gray-500">Tạm tính</span>
                 <span className="text-gray-900">{formatPrice(total)}</span>
               </div>
+              {appliedPromotion && (
+                <div className="flex items-center justify-between text-sm">
+                  <span className="text-gray-500">
+                    Mã {appliedPromotion.promotionCode} (-{appliedPromotion.discountPercent}%)
+                  </span>
+                  <span className="text-rose-600 font-medium">- {formatPrice(discountAmount)}</span>
+                </div>
+              )}
               <div className="flex items-center justify-between text-sm">
                 <span className="text-gray-500">Phí vận chuyển</span>
                 <span className="text-emerald-600 font-medium">Miễn phí</span>
               </div>
               <div className="border-t border-gray-100 pt-3 flex items-center justify-between">
                 <span className="font-semibold text-gray-900">Tổng cộng</span>
-                <span className="text-xl font-bold text-gray-900">{formatPrice(total)}</span>
+                <span className="text-xl font-bold text-gray-900">{formatPrice(payableTotal)}</span>
               </div>
+            </div>
+            <div className="rounded-xl border border-gray-100 p-3 space-y-2">
+              <label className="block text-sm font-medium text-gray-700">Mã khuyến mãi</label>
+              <div className="space-y-2">
+                <p className="text-xs font-medium text-slate-700">Voucher của bạn</p>
+                {loadingAvailablePromotions && (
+                  <p className="text-xs text-slate-500">Đang tải danh sách mã...</p>
+                )}
+                {!loadingAvailablePromotions && availablePromotions.length === 0 && (
+                  <p className="text-xs text-slate-500">Bạn chưa có mã khả dụng.</p>
+                )}
+                {!loadingAvailablePromotions && availablePromotions.length > 0 && (
+                  <div className="max-h-48 overflow-y-auto space-y-2 pr-1">
+                    {availablePromotions.map(item => (
+                      <div key={item.assignment_id} className="rounded-lg border border-slate-200 bg-white px-3 py-2">
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="min-w-0">
+                            <p className="text-sm font-semibold text-slate-900 truncate">
+                              {item.code} - Giảm {item.discount_percent}%
+                            </p>
+                            <p className="text-xs text-slate-500 truncate">
+                              {item.name || 'Mã khuyến mãi cá nhân'} • Đơn từ {formatPrice(Number(item.min_order || 0))}
+                            </p>
+                            {!item.can_apply && item.disabled_reason && (
+                              <p className="text-xs text-amber-700 mt-1">{item.disabled_reason}</p>
+                            )}
+                          </div>
+                          <button
+                            type="button"
+                            disabled={!item.can_apply || applyingPromotion || submitting}
+                            onClick={() => handleApplyPromotion(item.code)}
+                            className="shrink-0 px-2.5 h-8 rounded-md text-xs font-semibold text-white bg-teal-600 hover:bg-teal-700 disabled:opacity-50"
+                          >
+                            Áp dụng
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+              <div className="flex gap-2">
+                <input
+                  value={promotionCodeInput}
+                  onChange={event => setPromotionCodeInput(event.target.value.toUpperCase())}
+                  placeholder="Nhập mã khuyến mãi"
+                  className="flex-1 h-10 px-3 bg-gray-50 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-teal-500/30 focus:border-teal-400"
+                />
+                <button
+                  type="button"
+                  onClick={handleApplyPromotion}
+                  disabled={applyingPromotion || submitting || !promotionCodeInput.trim()}
+                  className="px-3 h-10 rounded-lg text-sm font-semibold text-white bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50"
+                >
+                  {applyingPromotion ? 'Đang áp...' : 'Áp dụng'}
+                </button>
+              </div>
+              {appliedPromotion && (
+                <div className="flex items-center justify-between rounded-lg bg-emerald-50 border border-emerald-200 px-3 py-2">
+                  <p className="text-xs text-emerald-700">
+                    Đã áp mã <span className="font-semibold">{appliedPromotion.promotionCode}</span>
+                  </p>
+                  <button type="button" onClick={handleRemovePromotion} className="text-xs text-rose-600 hover:text-rose-700">
+                    Bỏ mã
+                  </button>
+                </div>
+              )}
+              {promotionError && <p className="text-xs text-rose-600">{promotionError}</p>}
             </div>
             {paymentMethod === 'bank_transfer' && (
               <div className="rounded-xl border border-teal-100 bg-teal-50/60 p-4 space-y-3">
@@ -388,6 +572,9 @@ export default function CheckoutPage() {
                   <p><span className="font-medium">Số tài khoản:</span> {effectiveAccountNo}</p>
                   <p><span className="font-medium">Chủ tài khoản:</span> {effectiveAccountName}</p>
                   <p><span className="font-medium">Số tiền:</span> {formatPrice(total)}</p>
+                  {appliedPromotion && (
+                    <p><span className="font-medium">Sau giảm:</span> {formatPrice(payableTotal)}</p>
+                  )}
                   <p><span className="font-medium">Nội dung CK:</span> {paymentReference || 'Đang tạo...'}</p>
                 </div>
                 <button

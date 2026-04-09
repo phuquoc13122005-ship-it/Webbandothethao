@@ -1,0 +1,15 @@
+$kind: http-request
+url: "{{baseUrl}}/api/db/query"
+method: POST
+headers:
+  Content-Type: application/json
+body:
+  type: text
+  content: |-
+    {
+      "table": "home_category_sections",
+      "select": "*",
+      "filters": [],
+      "order": { "column": "sort_order", "ascending": true }
+    }
+order: 3000

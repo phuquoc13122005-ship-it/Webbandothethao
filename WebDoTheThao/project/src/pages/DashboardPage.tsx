@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { Package, ShoppingBag, User as UserIcon, LogOut, ChevronRight, Clock, MapPin, Phone, Mail, CreditCard as Edit3, Save, X, Trash2, Eye } from 'lucide-react';
+import { Package, ShoppingBag, User as UserIcon, LogOut, ChevronRight, Clock, MapPin, Phone, Mail, CreditCard as Edit3, X, Trash2, Eye, EyeOff } from 'lucide-react';
 import { db } from '../lib/db';
 import { useAuth } from '../contexts/AuthContext';
 import { useCart } from '../contexts/CartContext';
@@ -16,8 +16,19 @@ import {
   normalizeCancelDetail,
 } from '../lib/orderCancellation';
 
-type Tab = 'orders' | 'profile';
+type Tab = 'orders' | 'profile' | 'account_settings';
 type OrderFilterStatus = 'all' | Order['status'];
+
+function formatPasswordErrorMessage(error: any) {
+  const code = String(error?.message || '');
+  if (code === 'INVALID_CURRENT_PASSWORD') return 'Sai mật khẩu hiện tại.';
+  if (code === 'PASSWORD_ALREADY_USED') return 'Mật khẩu đã được sử dụng.';
+  if (code === 'INVALID_PASSWORD') return 'Mật khẩu mới phải có ít nhất 6 ký tự.';
+  if (code === 'USER_NOT_FOUND') return 'Không tìm thấy tài khoản trong hệ thống. Vui lòng đăng xuất rồi đăng nhập lại.';
+  if (code === 'UNAUTHENTICATED') return 'Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.';
+  if (code === 'PASSWORD_REQUIRED') return 'Vui lòng nhập đầy đủ thông tin mật khẩu.';
+  return 'Không thể đổi mật khẩu lúc này. Vui lòng thử lại.';
+}
 
 function toLocalDateInputValue(date: Date) {
   const year = date.getFullYear();
@@ -34,9 +45,23 @@ export default function DashboardPage() {
   const [orders, setOrders] = useState<Order[]>([]);
   const [profile, setProfile] = useState<Profile | null>(null);
   const [loading, setLoading] = useState(true);
-  const [editing, setEditing] = useState(false);
   const [editForm, setEditForm] = useState({ full_name: '', phone: '', address: '' });
   const [saving, setSaving] = useState(false);
+  const [profileSaveMessage, setProfileSaveMessage] = useState('');
+  const [profileSaveError, setProfileSaveError] = useState('');
+  const [passwordForm, setPasswordForm] = useState({
+    currentPassword: '',
+    newPassword: '',
+    confirmNewPassword: '',
+  });
+  const [showPasswordFields, setShowPasswordFields] = useState({
+    current: false,
+    next: false,
+    confirm: false,
+  });
+  const [passwordSubmitting, setPasswordSubmitting] = useState(false);
+  const [passwordError, setPasswordError] = useState('');
+  const [passwordSuccess, setPasswordSuccess] = useState('');
   const [detailOrder, setDetailOrder] = useState<Order | null>(null);
   const [filterStatus, setFilterStatus] = useState<OrderFilterStatus>('all');
   const [filterDateFrom, setFilterDateFrom] = useState('');
@@ -120,6 +145,8 @@ export default function DashboardPage() {
 
   const handleSaveProfile = async () => {
     if (!user) return;
+    setProfileSaveMessage('');
+    setProfileSaveError('');
     if (user.provider === 'google') {
       const updated = saveGoogleProfile(user, {
         full_name: editForm.full_name,
@@ -127,25 +154,82 @@ export default function DashboardPage() {
         address: editForm.address,
       });
       setProfile(updated);
-      setEditing(false);
+      setProfileSaveMessage('Cập nhật thông tin thành công.');
       return;
     }
 
     setSaving(true);
-    await db
-      .from('profiles')
-      .update({
-        full_name: editForm.full_name,
-        phone: editForm.phone,
-        address: editForm.address,
-        updated_at: new Date().toISOString(),
-      })
-      .eq('id', user.id);
+    try {
+      const { error: updateError } = await db
+        .from('profiles')
+        .update({
+          full_name: editForm.full_name.trim(),
+          phone: editForm.phone.trim(),
+          address: editForm.address.trim(),
+        })
+        .eq('id', user.id);
 
-    const { data } = await db.from('profiles').select('*').eq('id', user.id).maybeSingle();
-    setProfile(data);
-    setEditing(false);
-    setSaving(false);
+      if (updateError) {
+        setProfileSaveError(updateError.message || 'Không thể cập nhật thông tin lúc này.');
+        return;
+      }
+
+      const { data, error: refreshError } = await db.from('profiles').select('*').eq('id', user.id).maybeSingle();
+      if (refreshError || !data) {
+        setProfileSaveError(refreshError?.message || 'Đã lưu nhưng không thể tải lại thông tin.');
+        return;
+      }
+
+      setProfile(data);
+      setEditForm({
+        full_name: data.full_name || '',
+        phone: data.phone || '',
+        address: data.address || '',
+      });
+      setProfileSaveMessage('Cập nhật thông tin thành công.');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleChangePassword = async (event: React.FormEvent) => {
+    event.preventDefault();
+    setPasswordError('');
+    setPasswordSuccess('');
+
+    const currentPassword = passwordForm.currentPassword;
+    const newPassword = passwordForm.newPassword;
+    const confirmNewPassword = passwordForm.confirmNewPassword;
+
+    if (!currentPassword || !newPassword || !confirmNewPassword) {
+      setPasswordError('Vui lòng nhập đầy đủ thông tin đổi mật khẩu.');
+      return;
+    }
+    if (newPassword !== confirmNewPassword) {
+      setPasswordError('Mật khẩu chưa trùng khớp.');
+      return;
+    }
+
+    setPasswordSubmitting(true);
+    try {
+      const { error } = await db.auth.changePassword({
+        currentPassword,
+        newPassword,
+      });
+      if (error) {
+        setPasswordError(formatPasswordErrorMessage(error));
+        return;
+      }
+
+      setPasswordSuccess('Đổi mật khẩu thành công.');
+      setPasswordForm({
+        currentPassword: '',
+        newPassword: '',
+        confirmNewPassword: '',
+      });
+    } finally {
+      setPasswordSubmitting(false);
+    }
   };
 
   const handleSignOut = async () => {
@@ -349,15 +433,9 @@ export default function DashboardPage() {
         <aside className="lg:col-span-1">
           <div className="bg-white rounded-2xl border border-gray-100 p-6 sticky top-24">
             <div className="flex items-center gap-4 mb-6 pb-6 border-b border-gray-100">
-              {user.avatarUrl ? (
-                <img src={user.avatarUrl} alt={profile?.full_name || 'Avatar'} className="w-14 h-14 rounded-2xl object-cover" />
-              ) : (
-                <div className="w-14 h-14 bg-gradient-to-br from-teal-400 to-emerald-500 rounded-2xl flex items-center justify-center">
-                  <span className="text-white text-xl font-bold">
-                    {user.email?.charAt(0).toUpperCase()}
-                  </span>
-                </div>
-              )}
+              <div className="w-14 h-14 bg-gradient-to-br from-teal-400 to-emerald-500 rounded-2xl flex items-center justify-center">
+                <UserIcon className="w-6 h-6 text-white" />
+              </div>
               <div className="min-w-0">
                 <p className="font-semibold text-gray-900 truncate">{profile?.full_name || 'Người dùng'}</p>
                 <p className="text-sm text-gray-500 truncate">{user.email}</p>
@@ -588,103 +666,194 @@ export default function DashboardPage() {
             <div className="bg-white rounded-2xl border border-gray-100 p-6 sm:p-8">
               <div className="flex items-center justify-between mb-8">
                 <h2 className="text-xl font-bold text-gray-900">Thông tin cá nhân</h2>
-                {!editing ? (
-                  <button
-                    onClick={() => setEditing(true)}
-                    className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-teal-600 hover:bg-teal-50 rounded-xl transition-colors"
-                  >
-                    <Edit3 className="w-4 h-4" />
-                    Chỉnh sửa
-                  </button>
-                ) : (
-                  <div className="flex items-center gap-2">
-                    <button
-                      onClick={() => setEditing(false)}
-                      className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-gray-600 hover:bg-gray-50 rounded-xl transition-colors"
-                    >
-                      <X className="w-4 h-4" />
-                      Huỷ
-                    </button>
-                    <button
-                      onClick={handleSaveProfile}
-                      disabled={saving}
-                      className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-teal-600 hover:bg-teal-700 rounded-xl transition-colors disabled:opacity-60"
-                    >
-                      <Save className="w-4 h-4" />
-                      Lưu
-                    </button>
-                  </div>
-                )}
+                <button
+                  onClick={() => setActiveTab('account_settings')}
+                  className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-teal-600 hover:bg-teal-50 rounded-xl transition-colors"
+                >
+                  <Edit3 className="w-4 h-4" />
+                  Chỉnh sửa
+                </button>
               </div>
 
-              {editing ? (
-                <div className="space-y-6">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">Họ và tên</label>
-                    <input
-                      type="text"
-                      value={editForm.full_name}
-                      onChange={e => setEditForm({ ...editForm, full_name: e.target.value })}
-                      className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-teal-500/30 focus:border-teal-400"
-                    />
+              <div className="space-y-6">
+                <div className="flex items-center gap-6 p-6 bg-gray-50 rounded-2xl">
+                  <div className="w-20 h-20 bg-gradient-to-br from-teal-400 to-emerald-500 rounded-2xl flex items-center justify-center">
+                    <UserIcon className="w-9 h-9 text-white" />
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">Số điện thoại</label>
-                    <input
-                      type="text"
-                      value={editForm.phone}
-                      onChange={e => setEditForm({ ...editForm, phone: e.target.value })}
-                      className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-teal-500/30 focus:border-teal-400"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">Địa chỉ</label>
-                    <textarea
-                      value={editForm.address}
-                      onChange={e => setEditForm({ ...editForm, address: e.target.value })}
-                      rows={3}
-                      className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-teal-500/30 focus:border-teal-400 resize-none"
-                    />
+                    <h3 className="text-lg font-semibold text-gray-900">
+                      {profile?.full_name || 'Chưa cập nhật'}
+                    </h3>
+                    <p className="text-gray-500 text-sm">Thành viên từ {profile ? formatDate(profile.created_at) : ''}</p>
                   </div>
                 </div>
-              ) : (
-                <div className="space-y-6">
-                  <div className="flex items-center gap-6 p-6 bg-gray-50 rounded-2xl">
-                    {user.avatarUrl ? (
-                      <img src={user.avatarUrl} alt={profile?.full_name || 'Avatar'} className="w-20 h-20 rounded-2xl object-cover" />
-                    ) : (
-                      <div className="w-20 h-20 bg-gradient-to-br from-teal-400 to-emerald-500 rounded-2xl flex items-center justify-center">
-                        <span className="text-white text-2xl font-bold">
-                          {user.email?.charAt(0).toUpperCase()}
-                        </span>
-                      </div>
-                    )}
-                    <div>
-                      <h3 className="text-lg font-semibold text-gray-900">
-                        {profile?.full_name || 'Chưa cập nhật'}
-                      </h3>
-                      <p className="text-gray-500 text-sm">Thành viên từ {profile ? formatDate(profile.created_at) : ''}</p>
-                    </div>
-                  </div>
 
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                    {[
-                      { icon: Mail, label: 'Email', value: user.email },
-                      { icon: Phone, label: 'Số điện thoại', value: profile?.phone || 'Chưa cập nhật' },
-                      { icon: UserIcon, label: 'Họ tên', value: profile?.full_name || 'Chưa cập nhật' },
-                      { icon: MapPin, label: 'Địa chỉ', value: profile?.address || 'Chưa cập nhật' },
-                    ].map(item => (
-                      <div key={item.label} className="flex items-start gap-3 p-4 bg-gray-50 rounded-xl">
-                        <item.icon className="w-5 h-5 text-teal-600 flex-shrink-0 mt-0.5" />
-                        <div>
-                          <p className="text-xs text-gray-500 mb-0.5">{item.label}</p>
-                          <p className="text-sm font-medium text-gray-900">{item.value}</p>
-                        </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  {[
+                    { icon: Mail, label: 'Email', value: user.email },
+                    { icon: Phone, label: 'Số điện thoại', value: profile?.phone || 'Chưa cập nhật' },
+                    { icon: UserIcon, label: 'Họ tên', value: profile?.full_name || 'Chưa cập nhật' },
+                    { icon: MapPin, label: 'Địa chỉ', value: profile?.address || 'Chưa cập nhật' },
+                  ].map(item => (
+                    <div key={item.label} className="flex items-start gap-3 p-4 bg-gray-50 rounded-xl">
+                      <item.icon className="w-5 h-5 text-teal-600 flex-shrink-0 mt-0.5" />
+                      <div>
+                        <p className="text-xs text-gray-500 mb-0.5">{item.label}</p>
+                        <p className="text-sm font-medium text-gray-900">{item.value}</p>
                       </div>
-                    ))}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {activeTab === 'account_settings' && (
+            <div className="bg-white rounded-2xl border border-gray-100 p-6 sm:p-8 space-y-8">
+              <div>
+                <h2 className="text-2xl font-bold text-gray-900 mb-4">Trang thông tin tài khoản</h2>
+                <button
+                  onClick={() => {
+                    setActiveTab('profile');
+                    setProfileSaveMessage('');
+                    setPasswordError('');
+                    setPasswordSuccess('');
+                  }}
+                  className="px-6 py-2.5 rounded-lg bg-teal-600 text-white text-sm font-semibold hover:bg-teal-700"
+                >
+                  QUAY LẠI
+                </button>
+              </div>
+
+              <div className="space-y-4">
+                <h3 className="text-3xl font-bold text-gray-900">Thông tin tài khoản</h3>
+                {profileSaveMessage && (
+                  <p className="text-sm text-emerald-600">{profileSaveMessage}</p>
+                )}
+                {profileSaveError && (
+                  <p className="text-sm text-rose-600">{profileSaveError}</p>
+                )}
+                <div>
+                  <label className="block text-sm font-semibold text-gray-700 mb-2">Email *</label>
+                  <input
+                    type="email"
+                    value={user.email || ''}
+                    readOnly
+                    className="w-full px-4 py-3 bg-gray-100 border border-gray-200 rounded-sm text-base text-gray-600"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-semibold text-gray-700 mb-2">Họ tên *</label>
+                  <input
+                    type="text"
+                    value={editForm.full_name}
+                    onChange={event => setEditForm(prev => ({ ...prev, full_name: event.target.value }))}
+                    className="w-full px-4 py-3 bg-white border border-gray-200 rounded-sm text-base focus:outline-none focus:border-teal-400"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-semibold text-gray-700 mb-2">Số điện thoại *</label>
+                  <input
+                    type="text"
+                    value={editForm.phone}
+                    onChange={event => setEditForm(prev => ({ ...prev, phone: event.target.value }))}
+                    className="w-full px-4 py-3 bg-white border border-gray-200 rounded-sm text-base focus:outline-none focus:border-teal-400"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-semibold text-gray-700 mb-2">Địa chỉ</label>
+                  <textarea
+                    value={editForm.address}
+                    onChange={event => setEditForm(prev => ({ ...prev, address: event.target.value }))}
+                    rows={3}
+                    className="w-full px-4 py-3 bg-white border border-gray-200 rounded-sm text-base focus:outline-none focus:border-teal-400 resize-none"
+                  />
+                </div>
+                <button
+                  onClick={handleSaveProfile}
+                  disabled={saving}
+                  className="w-full h-11 rounded-md bg-teal-600 text-white font-semibold hover:bg-teal-700 disabled:opacity-60"
+                >
+                  {saving ? 'ĐANG CẬP NHẬT...' : 'CẬP NHẬT'}
+                </button>
+              </div>
+
+              <form onSubmit={handleChangePassword} className="space-y-4">
+                <h3 className="text-3xl font-bold text-gray-900">Đổi mật khẩu</h3>
+                {passwordError && (
+                  <p className="text-sm text-rose-600">{passwordError}</p>
+                )}
+                {passwordSuccess && (
+                  <p className="text-sm text-emerald-600">{passwordSuccess}</p>
+                )}
+                <div>
+                  <label className="block text-sm font-semibold text-gray-700 mb-2">Mật khẩu hiện tại</label>
+                  <div className="relative">
+                    <input
+                      type={showPasswordFields.current ? 'text' : 'password'}
+                      value={passwordForm.currentPassword}
+                      onChange={event => setPasswordForm(prev => ({ ...prev, currentPassword: event.target.value }))}
+                      placeholder="Mật khẩu hiện tại (*)"
+                      className="w-full px-4 pr-12 py-3 bg-white border border-gray-200 rounded-sm text-base focus:outline-none focus:border-teal-400"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowPasswordFields(prev => ({ ...prev, current: !prev.current }))}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                      aria-label={showPasswordFields.current ? 'Ẩn mật khẩu hiện tại' : 'Hiện mật khẩu hiện tại'}
+                    >
+                      {showPasswordFields.current ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
+                    </button>
                   </div>
                 </div>
-              )}
+                <div>
+                  <label className="block text-sm font-semibold text-gray-700 mb-2">Mật khẩu mới</label>
+                  <div className="relative">
+                    <input
+                      type={showPasswordFields.next ? 'text' : 'password'}
+                      value={passwordForm.newPassword}
+                      onChange={event => setPasswordForm(prev => ({ ...prev, newPassword: event.target.value }))}
+                      placeholder="Mật khẩu mới (*)"
+                      className="w-full px-4 pr-12 py-3 bg-white border border-gray-200 rounded-sm text-base focus:outline-none focus:border-teal-400"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowPasswordFields(prev => ({ ...prev, next: !prev.next }))}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                      aria-label={showPasswordFields.next ? 'Ẩn mật khẩu mới' : 'Hiện mật khẩu mới'}
+                    >
+                      {showPasswordFields.next ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
+                    </button>
+                  </div>
+                </div>
+                <div>
+                  <label className="block text-sm font-semibold text-gray-700 mb-2">Nhập lại mật khẩu mới</label>
+                  <div className="relative">
+                    <input
+                      type={showPasswordFields.confirm ? 'text' : 'password'}
+                      value={passwordForm.confirmNewPassword}
+                      onChange={event => setPasswordForm(prev => ({ ...prev, confirmNewPassword: event.target.value }))}
+                      placeholder="Nhập lại mật khẩu mới (*)"
+                      className="w-full px-4 pr-12 py-3 bg-white border border-gray-200 rounded-sm text-base focus:outline-none focus:border-teal-400"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowPasswordFields(prev => ({ ...prev, confirm: !prev.confirm }))}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                      aria-label={showPasswordFields.confirm ? 'Ẩn nhập lại mật khẩu mới' : 'Hiện nhập lại mật khẩu mới'}
+                    >
+                      {showPasswordFields.confirm ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
+                    </button>
+                  </div>
+                </div>
+                <button
+                  type="submit"
+                  disabled={passwordSubmitting}
+                  className="w-full h-11 rounded-md bg-teal-600 text-white font-semibold hover:bg-teal-700 disabled:opacity-60"
+                >
+                  {passwordSubmitting ? 'ĐANG CẬP NHẬT...' : 'ĐỔI MẬT KHẨU'}
+                </button>
+              </form>
             </div>
           )}
 

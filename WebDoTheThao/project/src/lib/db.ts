@@ -158,6 +158,89 @@ const mysqlApiClient = {
   from(table: string) {
     return new ApiQueryBuilder(table);
   },
+  async getApprovedReviewsByProduct(productId: string) {
+    const result = await callApi(`/api/reviews/by-product/${encodeURIComponent(productId)}`, 'GET');
+    return { data: result.data, error: result.error };
+  },
+  async submitProductReview(payload: {
+    productId: string;
+    fullName: string;
+    phone?: string;
+    rating: number;
+    comment: string;
+    imageUrl?: string;
+  }) {
+    const result = await callApi('/api/reviews/submit', 'POST', {
+      product_id: payload.productId,
+      full_name: payload.fullName,
+      phone: payload.phone || '',
+      rating: payload.rating,
+      comment: payload.comment,
+      image_url: payload.imageUrl || '',
+    });
+    return { data: result.data, error: result.error };
+  },
+  async moderateReview(payload: { reviewId: string; status: 'pending' | 'approved' | 'hidden' }) {
+    const result = await callApi('/api/reviews/moderate', 'POST', {
+      review_id: payload.reviewId,
+      status: payload.status,
+    });
+    return { data: result.data, error: result.error };
+  },
+  async createPromotion(payload: {
+    code: string;
+    name: string;
+    discountPercent: number;
+    minOrder: number;
+    maxUsesPerUser: number;
+    startsAt?: string;
+    endsAt?: string;
+    isActive?: boolean;
+  }) {
+    const result = await callApi('/api/promotions/create', 'POST', {
+      code: payload.code,
+      name: payload.name,
+      discount_percent: payload.discountPercent,
+      min_order: payload.minOrder,
+      max_uses_per_user: payload.maxUsesPerUser,
+      starts_at: payload.startsAt || null,
+      ends_at: payload.endsAt || null,
+      is_active: Boolean(payload.isActive),
+    });
+    return { data: result.data, error: result.error };
+  },
+  async assignPromotion(payload: {
+    promotionId: string;
+    mode: 'all_buyers' | 'min_order' | 'specific_user';
+    minOrderAmount?: number;
+    targetUserId?: string;
+  }) {
+    const result = await callApi('/api/promotions/assign', 'POST', {
+      promotion_id: payload.promotionId,
+      mode: payload.mode,
+      min_order_amount: payload.minOrderAmount || 0,
+      target_user_id: payload.targetUserId || '',
+    });
+    return { data: result.data, error: result.error };
+  },
+  async getPromotionAssignments(promotionId: string) {
+    const result = await callApi(`/api/promotions/assignments/${encodeURIComponent(promotionId)}`, 'GET');
+    return { data: result.data, error: result.error };
+  },
+  async getMyAvailablePromotions(orderSubtotal: number) {
+    const query = new URLSearchParams({
+      order_subtotal: String(Math.max(0, Number(orderSubtotal || 0))),
+    });
+    const result = await callApi(`/api/promotions/my-available?${query.toString()}`, 'GET');
+    return { data: result.data, error: result.error };
+  },
+  async applyPromotionPreview(payload: { code: string; orderSubtotal: number }) {
+    const result = await callApi('/api/promotions/apply-preview', 'POST', {
+      code: payload.code,
+      order_subtotal: payload.orderSubtotal,
+    });
+    return { data: result.data, error: result.error };
+  },
   async rpc(fn: string, args: unknown) {
     const result = await callApi('/api/db/rpc', 'POST', { fn, args });
     return { data: result.data, error: result.error };
@@ -228,7 +311,7 @@ const mysqlApiClient = {
         email,
         shouldCreateUser: Boolean(options?.shouldCreateUser),
       });
-      return { error: result.error };
+      return { error: result.error, data: result.data };
     },
     async verifyOtp({ email, token }: any) {
       const result = await callApi('/api/auth/verify-otp', 'POST', {
@@ -243,6 +326,42 @@ const mysqlApiClient = {
     async updateUser({ password }: any) {
       const result = await callApi('/api/auth/update-password', 'POST', { password });
       return { error: result.error };
+    },
+    async requestPasswordResetLink({ email }: any) {
+      const result = await callApi('/api/auth/forgot-password/request', 'POST', { email });
+      return { error: result.error, data: result.data };
+    },
+    async verifyPasswordResetCode({ email, code }: any) {
+      const result = await callApi('/api/auth/forgot-password/verify', 'POST', {
+        email,
+        code,
+      });
+      return { error: result.error, data: result.data };
+    },
+    async resetPasswordWithCode({ email, code, password }: any) {
+      const result = await callApi('/api/auth/forgot-password/reset', 'POST', {
+        email,
+        code,
+        password,
+      });
+      return { error: result.error, data: result.data };
+    },
+    async changePassword({ currentPassword, newPassword }: any) {
+      const result = await callApi('/api/auth/change-password', 'POST', {
+        current_password: currentPassword,
+        new_password: newPassword,
+      });
+      return { error: result.error, data: result.data };
+    },
+    async adminCreateAccount({ fullName, phone, address, email, role }: any) {
+      const result = await callApi('/api/auth/admin/create-account', 'POST', {
+        full_name: fullName,
+        phone,
+        address,
+        email,
+        role,
+      });
+      return { error: result.error, data: result.data };
     },
     async getUser() {
       const result = await callApi('/api/auth/user', 'GET');

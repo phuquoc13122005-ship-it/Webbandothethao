@@ -1,12 +1,41 @@
+export type CategoryProductGroup = 'badminton' | 'tennis' | 'pickleball' | 'other';
+
 export interface Category {
   id: string;
   name: string;
   slug: string;
   description: string;
   image_url: string;
+  product_group?: CategoryProductGroup;
   size_type?: 'none' | 'apparel' | 'shoes';
   size_values?: string;
   created_at: string;
+}
+
+export interface Banner {
+  id: string;
+  title?: string;
+  image_url: string;
+  target_type?: 'none' | 'product' | 'category';
+  target_product_id?: string | null;
+  target_product_slug?: string | null;
+  target_category_id?: string | null;
+  target_category_slug?: string | null;
+  sort_order?: number;
+  is_active?: boolean | number;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface HomeCategorySection {
+  id: string;
+  title: string;
+  product_group: CategoryProductGroup;
+  categories_json?: string | null;
+  is_active?: boolean | number;
+  sort_order?: number;
+  created_at?: string;
+  updated_at?: string;
 }
 
 export interface Product {
@@ -28,6 +57,12 @@ export interface Product {
   size_options?: string;
   size_stock?: string;
   image_gallery?: string;
+  branch_name?: string | null;
+  target_audience?: string | null;
+  highlight_tags?: string | null;
+  shoe_form?: string | null;
+  play_style?: string | null;
+  segment?: string | null;
   created_at: string;
   categories?: Category;
 }

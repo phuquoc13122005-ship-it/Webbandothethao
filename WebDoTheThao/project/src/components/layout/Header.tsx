@@ -29,6 +29,7 @@ export default function Header() {
   const [searchQuery, setSearchQuery] = useState('');
   const [headerCategories, setHeaderCategories] = useState<Category[]>([]);
   const [menuLoading, setMenuLoading] = useState(false);
+  const [currentUserRole, setCurrentUserRole] = useState<'admin' | 'staff' | 'customer'>('customer');
 
   const fetchHeaderMenuData = useCallback(async () => {
     setMenuLoading(true);
@@ -40,6 +41,36 @@ export default function Header() {
   useEffect(() => {
     fetchHeaderMenuData();
   }, [fetchHeaderMenuData]);
+
+  useEffect(() => {
+    let active = true;
+    async function loadCurrentUserRole() {
+      if (!user?.id) {
+        setCurrentUserRole('customer');
+        return;
+      }
+      const { data } = await db
+        .from('profiles')
+        .select('role')
+        .eq('id', user.id)
+        .maybeSingle();
+      if (!active) return;
+      const role = String((data as { role?: string } | null)?.role || '').toLowerCase();
+      if (role === 'admin') {
+        setCurrentUserRole('admin');
+        return;
+      }
+      if (role === 'staff') {
+        setCurrentUserRole('staff');
+        return;
+      }
+      setCurrentUserRole('customer');
+    }
+    loadCurrentUserRole();
+    return () => {
+      active = false;
+    };
+  }, [user?.id]);
 
   const categoryColumns = useMemo(() => {
     const chunks: Category[][] = [[], [], [], []];
@@ -138,22 +169,34 @@ export default function Header() {
                       <div className="px-4 py-3 border-b border-gray-100">
                         <p className="text-sm font-medium text-gray-900 truncate">{user.email}</p>
                       </div>
-                      <Link
-                        to="/dashboard"
-                        onClick={() => setUserMenuOpen(false)}
-                        className="flex items-center gap-3 px-4 py-2.5 text-sm text-gray-700 hover:bg-teal-50 hover:text-teal-600 transition-colors"
-                      >
-                        <LayoutDashboard className="w-4 h-4" />
-                        Dashboard
-                      </Link>
-                      <Link
-                        to="/staff-dashboard"
-                        onClick={() => setUserMenuOpen(false)}
-                        className="flex items-center gap-3 px-4 py-2.5 text-sm text-gray-700 hover:bg-teal-50 hover:text-teal-600 transition-colors"
-                      >
-                        <Briefcase className="w-4 h-4" />
-                        Dashboard nhân viên
-                      </Link>
+                      {currentUserRole === 'admin' ? (
+                        <Link
+                          to="/admin-dashboard"
+                          onClick={() => setUserMenuOpen(false)}
+                          className="flex items-center gap-3 px-4 py-2.5 text-sm text-gray-700 hover:bg-teal-50 hover:text-teal-600 transition-colors"
+                        >
+                          <LayoutDashboard className="w-4 h-4" />
+                          Dashboard admin
+                        </Link>
+                      ) : currentUserRole === 'staff' ? (
+                        <Link
+                          to="/staff-dashboard"
+                          onClick={() => setUserMenuOpen(false)}
+                          className="flex items-center gap-3 px-4 py-2.5 text-sm text-gray-700 hover:bg-teal-50 hover:text-teal-600 transition-colors"
+                        >
+                          <Briefcase className="w-4 h-4" />
+                          Dashboard nhân viên
+                        </Link>
+                      ) : (
+                        <Link
+                          to="/dashboard"
+                          onClick={() => setUserMenuOpen(false)}
+                          className="flex items-center gap-3 px-4 py-2.5 text-sm text-gray-700 hover:bg-teal-50 hover:text-teal-600 transition-colors"
+                        >
+                          <LayoutDashboard className="w-4 h-4" />
+                          Dashboard
+                        </Link>
+                      )}
                       <button
                         onClick={handleSignOut}
                         className="flex items-center gap-3 w-full px-4 py-2.5 text-sm text-gray-700 hover:bg-rose-50 hover:text-rose-600 transition-colors"
@@ -242,6 +285,7 @@ export default function Header() {
           </div>
 
           {[
+            { label: 'Sale off', to: '/products?sale=1' },
             { label: 'Tin tức', to: '/products' },
             { label: 'Hướng dẫn', to: '/products' },
             { label: 'Giới thiệu', to: '/products' },
@@ -272,6 +316,7 @@ export default function Header() {
             {[
               { label: 'Trang chủ', to: '/' },
               { label: 'Sản phẩm', to: '/products' },
+              { label: 'Sale off', to: '/products?sale=1' },
               { label: 'Vợt cầu lông', to: '/products' },
               { label: 'Giày cầu lông', to: '/products' },
               { label: 'Pickleball', to: '/products' },

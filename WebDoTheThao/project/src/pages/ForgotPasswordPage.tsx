@@ -1,8 +1,7 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
-import { ArrowLeft, ArrowRight, Dumbbell, Eye, EyeOff, X } from 'lucide-react';
+import { useEffect, useMemo, useState } from 'react';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
+import { Eye, EyeOff } from 'lucide-react';
 import { db } from '../lib/db';
-import { useAuth } from '../contexts/AuthContext';
 
 function formatAuthError(err: unknown): string {
   if (err == null) return 'Không thể hoàn tất thao tác.';
@@ -10,134 +9,139 @@ function formatAuthError(err: unknown): string {
   const map: Record<string, string> = {
     EMAIL_INVALID: 'Email không hợp lệ.',
     USER_NOT_FOUND: 'Không tìm thấy tài khoản với email này.',
-    INVALID_OTP: 'Mã xác minh không đúng hoặc đã hết hạn.',
-    INVALID_PASSWORD: 'Mật khẩu không hợp lệ.',
-    UNAUTHENTICATED: 'Phiên không hợp lệ. Vui lòng gửi mã và xác minh lại.',
-    'Request failed': 'Không kết nối được máy chủ. Hãy chạy API (npm run dev:auth) và kiểm tra VITE_AUTH_SERVER_URL.',
+    INVALID_RESET_CODE: 'Mã xác nhận không hợp lệ hoặc đã hết hạn.',
+    INVALID_PASSWORD: 'Mật khẩu phải có ít nhất 6 ký tự.',
+    'Request failed': 'Không kết nối được máy chủ. Hãy chạy API (npm run dev:auth).',
   };
   return map[msg || ''] || msg || 'Không thể hoàn tất thao tác.';
 }
 
+function generateCaptchaCode() {
+  return String(Math.floor(1000 + Math.random() * 9000));
+}
+
 export default function ForgotPasswordPage() {
   const navigate = useNavigate();
-  const { signOut } = useAuth();
+  const [searchParams] = useSearchParams();
+
   const [email, setEmail] = useState('');
-  const [otpCode, setOtpCode] = useState('');
+  const [captchaCode, setCaptchaCode] = useState(() => generateCaptchaCode());
+  const [captchaInput, setCaptchaInput] = useState('');
+  const [verificationCode, setVerificationCode] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
 
-  const [sendingCode, setSendingCode] = useState(false);
+  const [sendingRequest, setSendingRequest] = useState(false);
   const [verifyingCode, setVerifyingCode] = useState(false);
   const [submittingPassword, setSubmittingPassword] = useState(false);
-
-  const [codeSent, setCodeSent] = useState(false);
   const [codeVerified, setCodeVerified] = useState(false);
-  const [countdown, setCountdown] = useState(0);
-  const prevOtpLenRef = useRef(0);
-
   const [error, setError] = useState('');
   const [info, setInfo] = useState('');
 
-  const canSendCode = useMemo(
-    () => Boolean(email.trim()) && !sendingCode && countdown === 0,
-    [email, sendingCode, countdown],
+  const isConfirmMode = searchParams.get('xac_nhan') === '1';
+
+  useEffect(() => {
+    const emailFromLink = String(searchParams.get('email') || '').trim();
+    const codeFromLink = String(searchParams.get('ma_xac_nhan') || '').trim().toUpperCase();
+    if (emailFromLink) setEmail(emailFromLink);
+    if (codeFromLink) setVerificationCode(codeFromLink);
+  }, [searchParams]);
+
+  const canSend = useMemo(
+    () => Boolean(email.trim()) && Boolean(captchaInput.trim()) && !sendingRequest,
+    [email, captchaInput, sendingRequest],
   );
 
-  const handleSendCode = async (event: React.FormEvent) => {
+  const canVerifyCode = useMemo(
+    () => Boolean(email.trim()) && Boolean(verificationCode.trim()) && !verifyingCode && !codeVerified,
+    [email, verificationCode, verifyingCode, codeVerified],
+  );
+
+  const handleRequestReset = async (event: React.FormEvent) => {
     event.preventDefault();
-    const trimmedEmail = email.trim();
-    if (!trimmedEmail) {
-      setError('Vui lòng nhập email.');
+    const normalizedEmail = email.trim();
+    const normalizedCaptcha = captchaInput.trim();
+    if (!normalizedEmail || !normalizedEmail.includes('@')) {
+      setError('Vui lòng nhập email hợp lệ.');
       return;
     }
-    if (!trimmedEmail.includes('@')) {
-      setError('Vui lòng nhập địa chỉ email hợp lệ (hệ thống gửi mã qua email).');
+    if (normalizedCaptcha !== captchaCode) {
+      setError('Mã captcha không đúng. Vui lòng thử lại.');
+      setCaptchaInput('');
+      setCaptchaCode(generateCaptchaCode());
       return;
     }
 
     setError('');
     setInfo('');
-    setSendingCode(true);
+    setSendingRequest(true);
     try {
-      const { error: sendError } = await db.auth.signInWithOtp({ email: trimmedEmail });
-      if (sendError) {
-        setError(formatAuthError(sendError));
+      const { error: requestError, data } = await db.auth.requestPasswordResetLink({ email: normalizedEmail });
+      if (requestError) {
+        setError(formatAuthError(requestError));
+        setCaptchaCode(generateCaptchaCode());
+        setCaptchaInput('');
         return;
       }
-      setCodeSent(true);
-      setCodeVerified(false);
-      prevOtpLenRef.current = 0;
-      setOtpCode('');
-      setCountdown(60);
-      setInfo('Mã xác minh đã được gửi về email của bạn.');
+
+      if (data?.deliveredViaEmail) {
+        setInfo('Đã gửi email khôi phục mật khẩu. Hãy kiểm tra hộp thư (kể cả Spam) và bấm vào link xác nhận.');
+      } else {
+        const previewLink = data?.preview?.resetLink ? `\nLink test local: ${data.preview.resetLink}` : '';
+        const previewCode = data?.preview?.confirmationCode ? `\nMã xác nhận: ${data.preview.confirmationCode}` : '';
+        setInfo(
+          `Server chưa cấu hình SMTP nên chưa gửi email thật. Dùng thông tin test local bên dưới.${previewLink}${previewCode}`,
+        );
+      }
+      setCaptchaCode(generateCaptchaCode());
+      setCaptchaInput('');
     } catch {
-      setError(
-        'Không kết nối được máy chủ. Hãy chạy API (npm run dev:auth) và kiểm tra biến VITE_AUTH_SERVER_URL.',
-      );
+      setError('Không kết nối được máy chủ. Hãy chạy API (npm run dev:auth).');
     } finally {
-      setSendingCode(false);
+      setSendingRequest(false);
     }
   };
 
-  useEffect(() => {
-    if (countdown <= 0) return;
-    const timer = window.setInterval(() => {
-      setCountdown(prev => (prev > 0 ? prev - 1 : 0));
-    }, 1000);
-    return () => window.clearInterval(timer);
-  }, [countdown]);
+  const handleVerifyCode = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!canVerifyCode) return;
 
-  useEffect(() => {
-    const digits = otpCode.replace(/\D/g, '').slice(0, 6);
-    const len = digits.length;
-    const crossedToSix = prevOtpLenRef.current < 6 && len === 6;
-    prevOtpLenRef.current = len;
-
-    if (!codeSent || codeVerified || verifyingCode || !crossedToSix) return;
-
-    const run = async () => {
-      setVerifyingCode(true);
-      setError('');
-      setInfo('');
-      try {
-        const { error: verifyError } = await db.auth.verifyOtp({
-          email: email.trim(),
-          token: digits,
-        });
-        if (verifyError) {
-          setCodeVerified(false);
-          setError(formatAuthError(verifyError));
-          return;
-        }
-        setCodeVerified(true);
-        setInfo('Xác minh thành công. Hãy nhập mật khẩu mới.');
-      } catch {
+    setError('');
+    setInfo('');
+    setVerifyingCode(true);
+    try {
+      const { error: verifyError } = await db.auth.verifyPasswordResetCode({
+        email: email.trim(),
+        code: verificationCode.trim().toUpperCase(),
+      });
+      if (verifyError) {
         setCodeVerified(false);
-        setError(
-          'Không kết nối được máy chủ. Hãy chạy API (npm run dev:auth) và kiểm tra VITE_AUTH_SERVER_URL.',
-        );
-      } finally {
-        setVerifyingCode(false);
+        setError(formatAuthError(verifyError));
+        return;
       }
-    };
 
-    void run();
-  }, [codeSent, codeVerified, email, otpCode, verifyingCode]);
+      setCodeVerified(true);
+      setInfo('Xác nhận thành công. Bạn có thể thiết lập mật khẩu mới.');
+    } catch {
+      setCodeVerified(false);
+      setError('Không kết nối được máy chủ. Hãy chạy API (npm run dev:auth).');
+    } finally {
+      setVerifyingCode(false);
+    }
+  };
 
   const handleResetPassword = async (event: React.FormEvent) => {
     event.preventDefault();
     if (!codeVerified) {
-      setError('Vui lòng nhập đúng mã xác minh.');
+      setError('Vui lòng xác nhận mã trước khi đặt lại mật khẩu.');
       return;
     }
-
     if (password.length < 6) {
       setError('Mật khẩu mới phải có ít nhất 6 ký tự.');
       return;
     }
-
     if (password !== confirmPassword) {
       setError('Mật khẩu xác nhận không khớp.');
       return;
@@ -147,154 +151,152 @@ export default function ForgotPasswordPage() {
     setInfo('');
     setSubmittingPassword(true);
     try {
-      const { error: updateError } = await db.auth.updateUser({ password });
-      if (updateError) {
-        setError(formatAuthError(updateError));
+      const { error: resetError } = await db.auth.resetPasswordWithCode({
+        email: email.trim(),
+        code: verificationCode.trim().toUpperCase(),
+        password,
+      });
+      if (resetError) {
+        setError(formatAuthError(resetError));
         return;
       }
-      await signOut();
+
       window.alert('Đặt lại mật khẩu thành công. Vui lòng đăng nhập lại.');
       navigate('/login', { replace: true });
     } catch {
-      setError(
-        'Không kết nối được máy chủ. Hãy chạy API (npm run dev:auth) và kiểm tra VITE_AUTH_SERVER_URL.',
-      );
+      setError('Không kết nối được máy chủ. Hãy chạy API (npm run dev:auth).');
     } finally {
       setSubmittingPassword(false);
     }
   };
 
   return (
-    <div className="min-h-[calc(100vh-80px)] bg-gray-50 flex items-center justify-center px-4 py-10">
-      <div className="w-full max-w-xl bg-white rounded-3xl border border-gray-100 shadow-sm p-6 sm:p-8">
-        <div className="flex items-center justify-between mb-6">
-          <button
-            onClick={() => navigate('/login')}
-            className="inline-flex items-center gap-1 text-gray-600 hover:text-gray-900"
-          >
-            <ArrowLeft className="w-5 h-5" />
-            Quay lại
-          </button>
-          <button
-            onClick={() => navigate('/login')}
-            className="w-10 h-10 rounded-full bg-gray-100 text-gray-500 hover:text-gray-700 hover:bg-gray-200 flex items-center justify-center"
-            aria-label="Đóng"
-          >
-            <X className="w-5 h-5" />
-          </button>
-        </div>
-
-        <div className="text-center mb-8">
-          <div className="inline-flex items-center justify-center w-14 h-14 rounded-2xl bg-gradient-to-br from-teal-500 to-emerald-600 mb-5">
-            <Dumbbell className="w-7 h-7 text-white" />
-          </div>
-          <h2 className="text-4xl font-bold text-gray-900 mb-3">Quên mật khẩu?</h2>
-          <p className="text-gray-500 text-lg">
-            Nhập email hoặc username của bạn và chúng tôi sẽ gửi cho bạn mã khôi phục mật khẩu.
-          </p>
+    <div className="min-h-[calc(100vh-80px)] bg-gray-100 px-4 py-10">
+      <div className="w-full max-w-2xl mx-auto bg-white rounded-2xl border border-gray-200 p-6 sm:p-8">
+        <h1 className="text-center text-4xl font-bold tracking-wide text-orange-600 mb-4">QUÊN MẬT KHẨU</h1>
+        <div className="w-56 h-2 bg-slate-200 rounded-full mx-auto mb-8 overflow-hidden">
+          <div className="w-16 h-full bg-orange-500 rounded-full mx-auto" />
         </div>
 
         {error && (
-          <div className="mb-6 px-4 py-3 bg-rose-50 border border-rose-200 rounded-xl text-sm text-rose-600">
+          <div className="mb-4 px-4 py-3 rounded-lg bg-rose-50 border border-rose-200 text-rose-700 text-sm whitespace-pre-line">
             {error}
           </div>
         )}
         {info && (
-          <div className="mb-6 px-4 py-3 bg-teal-50 border border-teal-200 rounded-xl text-sm text-teal-700">
+          <div className="mb-4 px-4 py-3 rounded-lg bg-emerald-50 border border-emerald-200 text-emerald-700 text-sm whitespace-pre-line">
             {info}
           </div>
         )}
 
-        <form onSubmit={handleSendCode} className="space-y-6">
-          <div>
-            <label className="block text-sm font-semibold text-gray-800 mb-2">Tên đăng nhập</label>
+        {!isConfirmMode && (
+          <form onSubmit={handleRequestReset} className="space-y-4">
             <input
-              type="text"
-              required
+              type="email"
               value={email}
               onChange={event => setEmail(event.target.value)}
-              placeholder="Email hoặc Username"
-              className="w-full px-5 py-3.5 bg-gray-50 border border-gray-200 rounded-full text-lg focus:outline-none focus:ring-2 focus:ring-rose-400/30 focus:border-rose-400 transition-all"
+              placeholder="Email"
+              className="w-full h-14 px-4 border border-slate-300 rounded-md text-xl outline-none focus:border-orange-400 focus:ring-2 focus:ring-orange-500/20"
             />
-          </div>
+            <div className="grid grid-cols-[1fr_auto] gap-4 items-center">
+              <input
+                type="text"
+                value={captchaInput}
+                onChange={event => setCaptchaInput(event.target.value.replace(/\s/g, ''))}
+                placeholder="Mã captcha"
+                className="h-14 px-4 border border-slate-300 rounded-md text-3xl outline-none focus:border-orange-400 focus:ring-2 focus:ring-orange-500/20"
+              />
+              <button
+                type="button"
+                onClick={() => setCaptchaCode(generateCaptchaCode())}
+                className="h-14 min-w-32 px-4 border border-slate-300 rounded-md bg-gray-50 text-black text-4xl tracking-[0.2em] font-mono"
+                title="Đổi captcha"
+              >
+                {captchaCode}
+              </button>
+            </div>
+            <button
+              type="submit"
+              disabled={!canSend}
+              className="w-full h-14 rounded-md bg-orange-600 text-white text-3xl font-semibold hover:bg-orange-700 disabled:opacity-60"
+            >
+              {sendingRequest ? 'ĐANG GỬI...' : 'LẤY LẠI MẬT KHẨU'}
+            </button>
+          </form>
+        )}
 
-          <div className="flex items-center rounded-full bg-gray-100 border border-gray-200 overflow-hidden">
+        {isConfirmMode && (
+          <form onSubmit={handleVerifyCode} className="space-y-4">
+            <input
+              type="email"
+              value={email}
+              onChange={event => setEmail(event.target.value)}
+              placeholder="Email"
+              className="w-full h-14 px-4 border border-slate-300 rounded-md text-xl outline-none focus:border-orange-400 focus:ring-2 focus:ring-orange-500/20"
+            />
             <input
               type="text"
-              value={otpCode}
-              onChange={event => setOtpCode(event.target.value.replace(/\D/g, '').slice(0, 6))}
-              placeholder="Nhập mã xác nhận 6 số"
-              inputMode="numeric"
-              maxLength={6}
-              className="flex-1 bg-transparent px-5 py-3.5 text-lg outline-none"
-              disabled={!codeSent}
+              value={verificationCode}
+              onChange={event => setVerificationCode(event.target.value.toUpperCase())}
+              placeholder="Mã xác nhận"
+              className="w-full h-14 px-4 border border-slate-300 rounded-md text-3xl tracking-[0.08em] font-mono outline-none focus:border-orange-400 focus:ring-2 focus:ring-orange-500/20"
             />
             <button
               type="submit"
-              disabled={!canSendCode}
-              className="px-7 py-3.5 text-lg font-semibold text-gray-700 bg-gray-200 hover:bg-gray-300 transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
+              disabled={!canVerifyCode}
+              className="w-full h-14 rounded-md bg-orange-600 text-white text-3xl font-semibold hover:bg-orange-700 disabled:opacity-60"
             >
-              {sendingCode ? 'Đang gửi...' : countdown > 0 ? `Gửi lại (${countdown}s)` : 'Gửi mã'}
+              {verifyingCode ? 'ĐANG XÁC NHẬN...' : codeVerified ? 'ĐÃ XÁC NHẬN' : 'LẤY LẠI MẬT KHẨU'}
             </button>
-          </div>
-        </form>
+          </form>
+        )}
 
-        <form onSubmit={handleResetPassword} className="mt-6 space-y-4">
-          <div className="relative">
-            <input
-              type={showPassword ? 'text' : 'password'}
-              value={password}
-              onChange={event => setPassword(event.target.value)}
-              placeholder="Mật khẩu mới"
-              disabled={!codeVerified}
-              className="w-full px-5 py-3.5 bg-gray-50 border border-gray-200 rounded-full text-lg outline-none focus:ring-2 focus:ring-teal-500/30 focus:border-teal-400 disabled:bg-gray-100"
-            />
+        {isConfirmMode && codeVerified && (
+          <form onSubmit={handleResetPassword} className="mt-6 space-y-4">
+            <div className="relative">
+              <input
+                type={showPassword ? 'text' : 'password'}
+                value={password}
+                onChange={event => setPassword(event.target.value)}
+                placeholder="Mật khẩu mới"
+                className="w-full h-14 px-4 pr-12 border border-slate-300 rounded-md text-xl outline-none focus:border-orange-400 focus:ring-2 focus:ring-orange-500/20"
+              />
+              <button
+                type="button"
+                onClick={() => setShowPassword(prev => !prev)}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500"
+              >
+                {showPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
+              </button>
+            </div>
+            <div className="relative">
+              <input
+                type={showConfirmPassword ? 'text' : 'password'}
+                value={confirmPassword}
+                onChange={event => setConfirmPassword(event.target.value)}
+                placeholder="Xác nhận mật khẩu mới"
+                className="w-full h-14 px-4 pr-12 border border-slate-300 rounded-md text-xl outline-none focus:border-orange-400 focus:ring-2 focus:ring-orange-500/20"
+              />
+              <button
+                type="button"
+                onClick={() => setShowConfirmPassword(prev => !prev)}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500"
+              >
+                {showConfirmPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
+              </button>
+            </div>
             <button
-              type="button"
-              onClick={() => setShowPassword(!showPassword)}
-              className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
-              disabled={!codeVerified}
+              type="submit"
+              disabled={submittingPassword}
+              className="w-full h-14 rounded-md bg-orange-600 text-white text-2xl font-semibold hover:bg-orange-700 disabled:opacity-60"
             >
-              {showPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
+              {submittingPassword ? 'ĐANG CẬP NHẬT...' : 'THIẾT LẬP MẬT KHẨU MỚI'}
             </button>
-          </div>
+          </form>
+        )}
 
-          <div className="relative">
-            <input
-              type={showConfirmPassword ? 'text' : 'password'}
-              value={confirmPassword}
-              onChange={event => setConfirmPassword(event.target.value)}
-              placeholder="Xác nhận mật khẩu mới"
-              disabled={!codeVerified}
-              className="w-full px-5 py-3.5 bg-gray-50 border border-gray-200 rounded-full text-lg outline-none focus:ring-2 focus:ring-teal-500/30 focus:border-teal-400 disabled:bg-gray-100"
-            />
-            <button
-              type="button"
-              onClick={() => setShowConfirmPassword(!showConfirmPassword)}
-              className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
-              disabled={!codeVerified}
-            >
-              {showConfirmPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
-            </button>
-          </div>
-
-          <button
-            type="submit"
-            disabled={!codeVerified || submittingPassword || verifyingCode}
-            className="w-full flex items-center justify-center gap-2 px-6 py-4 bg-gradient-to-r from-sky-300 to-teal-300 text-white text-xl font-semibold rounded-full transition-all disabled:opacity-60 disabled:cursor-not-allowed"
-          >
-            {submittingPassword ? 'Đang đặt lại...' : (
-              <>
-                Đặt lại mật khẩu
-                <ArrowRight className="w-5 h-5" />
-              </>
-            )}
-          </button>
-        </form>
-
-        <p className="mt-6 text-center text-sm text-gray-500">
-          Việc bạn tiếp tục sử dụng trang web này đồng nghĩa bạn đồng ý với{' '}
-          <Link to="#" className="underline hover:text-gray-700">điều khoản sử dụng</Link> của chúng tôi.
+        <p className="mt-6 text-right text-3xl text-slate-700">
+          <Link to="/login" className="hover:text-orange-600">Đăng nhập tại đây</Link>
         </p>
       </div>
     </div>

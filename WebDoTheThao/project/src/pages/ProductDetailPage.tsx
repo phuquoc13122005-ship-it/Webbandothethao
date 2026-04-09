@@ -1,12 +1,12 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, type ChangeEvent, type FormEvent } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
 import {
   Star, ShoppingCart, Minus, Plus, Truck, Shield, RotateCcw, CheckCircle2, Store,
-  ChevronRight, Heart,
+  ChevronRight, Heart, ImagePlus, X,
 } from 'lucide-react';
 import { db } from '../lib/db';
 import type { Product } from '../types';
-import { formatPrice, getDiscountPercent } from '../lib/formatters';
+import { formatDate, formatPrice, getDiscountPercent } from '../lib/formatters';
 import { useAuth } from '../contexts/AuthContext';
 import { useCart } from '../contexts/CartContext';
 import ProductCard from '../components/ui/ProductCard';
@@ -47,6 +47,24 @@ function parseImageGallery(rawValue?: string | null, mainImageUrl?: string | nul
   return Array.from(new Set(result));
 }
 
+interface ProductReview {
+  id: string;
+  product_id: string;
+  user_id?: string | null;
+  full_name?: string | null;
+  phone?: string | null;
+  rating: number;
+  comment?: string | null;
+  image_url?: string | null;
+  status?: string;
+  is_hidden?: boolean | number;
+  created_at?: string;
+}
+
+function generateCaptchaCode() {
+  return String(Math.floor(1000 + Math.random() * 9000));
+}
+
 export default function ProductDetailPage() {
   const { slug } = useParams<{ slug: string }>();
   const { user } = useAuth();
@@ -61,6 +79,22 @@ export default function ProductDetailPage() {
   const [activeTab, setActiveTab] = useState<'description' | 'specs'>('description');
   const [loading, setLoading] = useState(true);
   const [adding, setAdding] = useState(false);
+  const [approvedReviews, setApprovedReviews] = useState<ProductReview[]>([]);
+  const [reviewLoading, setReviewLoading] = useState(false);
+  const [isReviewModalOpen, setIsReviewModalOpen] = useState(false);
+  const [reviewSubmitting, setReviewSubmitting] = useState(false);
+  const [reviewSubmitMessage, setReviewSubmitMessage] = useState('');
+  const [reviewSubmitError, setReviewSubmitError] = useState('');
+  const [captchaCode, setCaptchaCode] = useState(generateCaptchaCode());
+  const [reviewForm, setReviewForm] = useState({
+    fullName: '',
+    phone: '',
+    comment: '',
+    rating: 5,
+    captchaInput: '',
+    imageUrl: '',
+    imageName: '',
+  });
   const sizeOptions = useMemo(() => {
     const raw = parseOptionList(String(product?.size_options || ''));
     if (raw.length > 0) return raw;
@@ -103,6 +137,18 @@ export default function ProductDetailPage() {
     () => parseImageGallery(product?.image_gallery, product?.image_url),
     [product?.image_gallery, product?.image_url],
   );
+  const reviewStats = useMemo(() => {
+    const distribution = [1, 2, 3, 4, 5].reduce((acc, star) => ({ ...acc, [star]: 0 }), {} as Record<number, number>);
+    approvedReviews.forEach(item => {
+      const star = Math.min(5, Math.max(1, Math.floor(Number(item.rating || 0))));
+      distribution[star] += 1;
+    });
+    const total = approvedReviews.length;
+    const average = total > 0
+      ? Number((approvedReviews.reduce((sum, item) => sum + Number(item.rating || 0), 0) / total).toFixed(1))
+      : Number(product?.rating || 0);
+    return { distribution, total, average };
+  }, [approvedReviews, product?.rating]);
 
   useEffect(() => {
     async function load() {
@@ -144,6 +190,31 @@ export default function ProductDetailPage() {
   }, [slug]);
 
   useEffect(() => {
+    let cancelled = false;
+    async function loadReviews() {
+      if (!product?.id) {
+        setApprovedReviews([]);
+        return;
+      }
+      setReviewLoading(true);
+      const { data, error } = await db.getApprovedReviewsByProduct(product.id);
+      if (cancelled) return;
+      if (error) {
+        setApprovedReviews([]);
+      } else {
+        setApprovedReviews((data || []) as ProductReview[]);
+      }
+      setReviewLoading(false);
+    }
+    loadReviews();
+    const timer = window.setInterval(loadReviews, 10000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
+  }, [product?.id]);
+
+  useEffect(() => {
     if (colorOptions.length > 0) {
       setSelectedColor(colorOptions[0]);
     }
@@ -169,6 +240,13 @@ export default function ProductDetailPage() {
       setSelectedSize(null);
     }
   }, [inStockSizeOptions, sizeOptions, selectedSize]);
+
+  useEffect(() => {
+    setReviewForm(prev => ({
+      ...prev,
+      fullName: user?.fullName || prev.fullName,
+    }));
+  }, [user?.fullName]);
 
   const handleAddToCart = async () => {
     if (!user) {
@@ -199,6 +277,97 @@ export default function ProductDetailPage() {
     if (user) {
       navigate('/cart');
     }
+  };
+
+  const openReviewModal = () => {
+    if (!user) {
+      navigate('/login');
+      return;
+    }
+    setReviewSubmitMessage('');
+    setReviewSubmitError('');
+    setCaptchaCode(generateCaptchaCode());
+    setReviewForm(prev => ({
+      ...prev,
+      fullName: user.fullName || prev.fullName,
+      captchaInput: '',
+    }));
+    setIsReviewModalOpen(true);
+  };
+
+  const closeReviewModal = () => {
+    setIsReviewModalOpen(false);
+    setReviewSubmitError('');
+  };
+
+  const handleReviewImageChange = async (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) {
+      setReviewForm(prev => ({ ...prev, imageUrl: '', imageName: '' }));
+      return;
+    }
+    const uploadResult = await db.uploadImage(file, file.name);
+    if (uploadResult.error || !uploadResult.data?.url) {
+      setReviewSubmitError(uploadResult.error?.message || 'Không thể tải ảnh đánh giá.');
+      return;
+    }
+    setReviewForm(prev => ({
+      ...prev,
+      imageUrl: String(uploadResult.data.url),
+      imageName: file.name,
+    }));
+  };
+
+  const handleSubmitReview = async (event: FormEvent) => {
+    event.preventDefault();
+    if (!user) {
+      navigate('/login');
+      return;
+    }
+    if (!product?.id) return;
+    setReviewSubmitError('');
+    setReviewSubmitMessage('');
+    if (!reviewForm.comment.trim()) {
+      setReviewSubmitError('Vui lòng nhập nhận xét.');
+      return;
+    }
+    if (!reviewForm.fullName.trim()) {
+      setReviewSubmitError('Vui lòng nhập họ và tên.');
+      return;
+    }
+    if (reviewForm.captchaInput.trim() !== captchaCode) {
+      setReviewSubmitError('Mã xác nhận không đúng.');
+      setCaptchaCode(generateCaptchaCode());
+      setReviewForm(prev => ({ ...prev, captchaInput: '' }));
+      return;
+    }
+
+    setReviewSubmitting(true);
+    const { error } = await db.submitProductReview({
+      productId: product.id,
+      fullName: reviewForm.fullName.trim(),
+      phone: reviewForm.phone.trim(),
+      rating: reviewForm.rating,
+      comment: reviewForm.comment.trim(),
+      imageUrl: reviewForm.imageUrl,
+    });
+    setReviewSubmitting(false);
+    if (error) {
+      setReviewSubmitError(error.message || 'Không thể gửi đánh giá.');
+      return;
+    }
+    // setReviewSubmitMessage('Đã gửi đánh giá thành công. Vui lòng chờ admin phê duyệt.');
+    setReviewForm({
+      fullName: user.fullName || '',
+      phone: '',
+      comment: '',
+      rating: 5,
+      captchaInput: '',
+      imageUrl: '',
+      imageName: '',
+    });
+    setCaptchaCode(generateCaptchaCode());
+    window.setTimeout(() => setIsReviewModalOpen(false), 1200);
   };
 
   if (loading) {
@@ -270,11 +439,11 @@ export default function ProductDetailPage() {
               {Array.from({ length: 5 }).map((_, i) => (
                 <Star
                   key={i}
-                  className={`w-4 h-4 ${i < Math.round(product.rating) ? 'text-amber-400 fill-amber-400' : 'text-gray-200'}`}
+                  className={`w-4 h-4 ${i < Math.round(reviewStats.average) ? 'text-amber-400 fill-amber-400' : 'text-gray-200'}`}
                 />
               ))}
             </div>
-            <span className="text-sm text-gray-500">{product.rating} ({product.reviews_count} đánh giá)</span>
+            <span className="text-sm text-gray-500">{reviewStats.average.toFixed(1)} ({reviewStats.total} đánh giá)</span>
           </div>
 
           <div className="bg-amber-50 border border-amber-200 rounded-xl px-4 py-3">
@@ -461,12 +630,93 @@ export default function ProductDetailPage() {
                 </tr>
                 <tr>
                   <td className="bg-slate-50 px-4 py-3 font-medium text-slate-700">Đánh giá</td>
-                  <td className="px-4 py-3 text-slate-700">{product.rating} / 5 ({product.reviews_count} đánh giá)</td>
+                  <td className="px-4 py-3 text-slate-700">{reviewStats.average.toFixed(1)} / 5 ({reviewStats.total} đánh giá)</td>
                 </tr>
               </tbody>
             </table>
           </div>
         )}
+      </section>
+
+      <section className="mb-16 space-y-5">
+        <div className="rounded-2xl border border-slate-200 bg-white p-4 sm:p-6">
+          <h3 className="text-lg font-bold text-slate-900 mb-4">Đánh giá & nhận xét {product.name}</h3>
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 border border-slate-100 rounded-xl p-4">
+            <div className="text-center flex flex-col items-center justify-center gap-1">
+              <p className="text-4xl font-bold text-slate-900">{reviewStats.average.toFixed(1)}/5</p>
+              <div className="flex items-center gap-1">
+                {Array.from({ length: 5 }).map((_, idx) => (
+                  <Star
+                    key={`summary-star-${idx}`}
+                    className={`w-5 h-5 ${idx < Math.round(reviewStats.average) ? 'text-amber-400 fill-amber-400' : 'text-slate-300'}`}
+                  />
+                ))}
+              </div>
+              <p className="text-sm text-slate-500">{reviewStats.total} đánh giá và nhận xét</p>
+            </div>
+            <div className="space-y-2">
+              {[5, 4, 3, 2, 1].map(star => {
+                const count = reviewStats.distribution[star] || 0;
+                const percent = reviewStats.total > 0 ? Math.round((count / reviewStats.total) * 100) : 0;
+                return (
+                  <div key={`bar-${star}`} className="flex items-center gap-3">
+                    <span className="text-sm text-slate-700 min-w-[36px] inline-flex items-center gap-1">
+                      {star} <Star className="w-3.5 h-3.5 text-amber-400 fill-amber-400" />
+                    </span>
+                    <div className="flex-1 h-2 rounded-full bg-slate-100 overflow-hidden">
+                      <div className="h-full bg-orange-500" style={{ width: `${percent}%` }} />
+                    </div>
+                    <span className="text-sm text-slate-500 min-w-[70px] text-right">{count} đánh giá</span>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+          <div className="text-center mt-4">
+            <p className="text-slate-600 mb-2">Bạn đánh giá sao sản phẩm này?</p>
+            <button
+              type="button"
+              onClick={openReviewModal}
+              className="inline-flex items-center justify-center min-w-72 h-11 rounded-xl bg-orange-600 hover:bg-orange-700 text-white font-semibold"
+            >
+              Đánh giá ngay
+            </button>
+          </div>
+        </div>
+
+        <div className="rounded-2xl border border-slate-200 bg-white p-4 sm:p-6">
+          <h3 className="text-2xl font-bold text-slate-900 mb-4">Bình luận</h3>
+          {reviewLoading && (
+            <p className="text-sm text-slate-500">Đang tải đánh giá...</p>
+          )}
+          {!reviewLoading && approvedReviews.length === 0 && (
+            <p className="text-sm text-slate-500">Chưa có đánh giá nào được duyệt cho sản phẩm này.</p>
+          )}
+          <div className="space-y-4">
+            {approvedReviews.map(review => (
+              <div key={review.id} className="border border-slate-100 rounded-xl p-4">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <p className="font-semibold text-slate-900">{review.full_name || 'Khách hàng'}</p>
+                    <div className="flex items-center gap-1 mt-1">
+                      {Array.from({ length: 5 }).map((_, idx) => (
+                        <Star
+                          key={`${review.id}-${idx}`}
+                          className={`w-4 h-4 ${idx < Math.round(Number(review.rating || 0)) ? 'text-amber-400 fill-amber-400' : 'text-slate-300'}`}
+                        />
+                      ))}
+                    </div>
+                  </div>
+                  <p className="text-sm text-slate-400">{review.created_at ? formatDate(review.created_at) : ''}</p>
+                </div>
+                <p className="text-slate-700 mt-3">{review.comment || ''}</p>
+                {review.image_url && (
+                  <img src={review.image_url} alt="Ảnh đánh giá người dùng" className="mt-3 w-24 h-24 rounded-lg object-cover border border-slate-200" />
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
       </section>
 
       {related.length > 0 && (
@@ -478,6 +728,95 @@ export default function ProductDetailPage() {
             ))}
           </div>
         </section>
+      )}
+
+      {isReviewModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
+          <div className="w-full max-w-3xl bg-white rounded-3xl overflow-hidden">
+            <div className="flex items-center justify-between bg-orange-600 px-6 py-4">
+              <p className="text-3xl font-bold text-white">Đánh giá & nhận xét sản phẩm</p>
+              <button onClick={closeReviewModal} type="button" className="text-white/90 hover:text-white">
+                <X className="w-6 h-6" />
+              </button>
+            </div>
+            <form onSubmit={handleSubmitReview} className="p-6 space-y-4">
+              <input
+                value={reviewForm.fullName}
+                onChange={event => setReviewForm(prev => ({ ...prev, fullName: event.target.value }))}
+                placeholder="Họ và Tên"
+                className="w-full h-12 rounded-xl border border-slate-200 px-4"
+              />
+              <input
+                value={reviewForm.phone}
+                onChange={event => setReviewForm(prev => ({ ...prev, phone: event.target.value }))}
+                placeholder="Số điện thoại"
+                className="w-full h-12 rounded-xl border border-slate-200 px-4"
+              />
+              <div className="flex items-center rounded-xl border border-slate-200 overflow-hidden">
+                <input
+                  value={reviewForm.imageName}
+                  readOnly
+                  placeholder="Hình ảnh thực tế"
+                  className="flex-1 h-12 px-4 bg-white"
+                />
+                <label className="h-12 px-4 inline-flex items-center gap-2 bg-slate-100 font-semibold text-slate-700 cursor-pointer">
+                  <ImagePlus className="w-5 h-5" />
+                  Thêm ảnh
+                  <input type="file" accept="image/*" onChange={handleReviewImageChange} className="hidden" />
+                </label>
+              </div>
+              <div className="flex items-center rounded-xl border border-slate-200 overflow-hidden">
+                <input
+                  value={reviewForm.captchaInput}
+                  onChange={event => setReviewForm(prev => ({ ...prev, captchaInput: event.target.value }))}
+                  placeholder="Mã xác nhận"
+                  className="flex-1 h-12 px-4"
+                />
+                <button
+                  type="button"
+                  onClick={() => setCaptchaCode(generateCaptchaCode())}
+                  className="h-12 min-w-28 px-4 bg-slate-100 font-mono italic text-2xl text-slate-800"
+                >
+                  {captchaCode}
+                </button>
+              </div>
+              <textarea
+                value={reviewForm.comment}
+                onChange={event => setReviewForm(prev => ({ ...prev, comment: event.target.value }))}
+                placeholder="Xin mời chia sẻ một số cảm nhận về sản phẩm"
+                rows={4}
+                className="w-full rounded-xl border border-slate-200 px-4 py-3"
+              />
+              <div className="rounded-xl border border-slate-200 px-4 py-4">
+                <p className="text-3xl font-bold text-slate-800 mb-3">Bạn thấy sản phẩm này như thế nào?</p>
+                <div className="flex items-center justify-center gap-4">
+                  {Array.from({ length: 5 }).map((_, index) => {
+                    const star = index + 1;
+                    return (
+                      <button
+                        key={`review-star-${star}`}
+                        type="button"
+                        onClick={() => setReviewForm(prev => ({ ...prev, rating: star }))}
+                        className="p-1"
+                      >
+                        <Star className={`w-8 h-8 ${star <= reviewForm.rating ? 'text-amber-400 fill-amber-400' : 'text-slate-300'}`} />
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+              {reviewSubmitError && <p className="text-sm text-rose-600">{reviewSubmitError}</p>}
+              {reviewSubmitMessage && <p className="text-sm text-emerald-600">{reviewSubmitMessage}</p>}
+              <button
+                type="submit"
+                disabled={reviewSubmitting}
+                className="w-full h-12 rounded-xl bg-orange-600 hover:bg-orange-700 text-white text-2xl font-bold disabled:opacity-50"
+              >
+                {reviewSubmitting ? 'ĐANG GỬI...' : 'GỬI ĐÁNH GIÁ'}
+              </button>
+            </form>
+          </div>
+        </div>
       )}
     </div>
   );

@@ -48,13 +48,29 @@ async function fetchGoogleSessionUser(): Promise<AuthUser | null> {
     return {
       id: payload.user.id,
       email: payload.user.email ?? null,
-      fullName: payload.user.name ?? null,
-      avatarUrl: payload.user.picture ?? null,
+      fullName: payload.user.full_name ?? payload.user.name ?? null,
+      avatarUrl: payload.user.avatar_url ?? payload.user.picture ?? null,
       provider: 'google',
     };
   } catch {
     return null;
   }
+}
+
+function mapSessionUserToAuthUser(sessionUser: any): AuthUser | null {
+  if (!sessionUser?.id) return null;
+  const provider = sessionUser.provider === 'google' ? 'google' : 'local';
+  return {
+    id: sessionUser.id,
+    email: sessionUser.email ?? null,
+    fullName: (sessionUser.user_metadata?.full_name as string | undefined)
+      ?? sessionUser.full_name
+      ?? null,
+    avatarUrl: (sessionUser.user_metadata?.avatar_url as string | undefined)
+      ?? sessionUser.avatar_url
+      ?? null,
+    provider,
+  };
 }
 
 export function AuthProvider({ children }: { children: ReactNode }) {
@@ -63,14 +79,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     db.auth.getSession().then(async ({ data: { session } }: { data: { session: any } }) => {
-      if (session?.user) {
-        setUser({
-          id: session.user.id,
-          email: session.user.email ?? null,
-          fullName: (session.user.user_metadata?.full_name as string | undefined) ?? null,
-          avatarUrl: (session.user.user_metadata?.avatar_url as string | undefined) ?? null,
-          provider: 'local',
-        });
+      const mapped = mapSessionUserToAuthUser(session?.user);
+      if (mapped) {
+        setUser(mapped);
       } else {
         const googleUser = await fetchGoogleSessionUser();
         setUser(googleUser);
@@ -79,14 +90,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     });
 
     const { data: { subscription } } = db.auth.onAuthStateChange(async (_event: string, session: any) => {
-      if (session?.user) {
-        setUser({
-          id: session.user.id,
-          email: session.user.email ?? null,
-          fullName: (session.user.user_metadata?.full_name as string | undefined) ?? null,
-          avatarUrl: (session.user.user_metadata?.avatar_url as string | undefined) ?? null,
-          provider: 'local',
-        });
+      const mapped = mapSessionUserToAuthUser(session?.user);
+      if (mapped) {
+        setUser(mapped);
       } else {
         const googleUser = await fetchGoogleSessionUser();
         setUser(googleUser);

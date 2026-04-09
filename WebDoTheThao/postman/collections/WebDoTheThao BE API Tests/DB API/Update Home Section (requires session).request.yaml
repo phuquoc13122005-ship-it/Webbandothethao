@@ -1,0 +1,19 @@
+$kind: http-request
+url: "{{baseUrl}}/api/db/update"
+method: POST
+headers:
+  Content-Type: application/json
+body:
+  type: text
+  content: |-
+    {
+      "table": "home_category_sections",
+      "values": {
+        "title": "Section test Postman - updated"
+      },
+      "filters": [
+        { "column": "title", "operator": "eq", "value": "Section test Postman" }
+      ],
+      "select": "*"
+    }
+order: 5000

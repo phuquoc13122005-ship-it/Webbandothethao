@@ -1,0 +1,15 @@
+$kind: http-request
+url: "{{baseUrl}}/api/db/delete"
+method: POST
+headers:
+  Content-Type: application/json
+body:
+  type: text
+  content: >-
+    {
+      "table": "home_category_sections",
+      "filters": [
+        { "column": "title", "operator": "eq", "value": "Section test Postman - updated" }
+      ]
+    }
+order: 6000

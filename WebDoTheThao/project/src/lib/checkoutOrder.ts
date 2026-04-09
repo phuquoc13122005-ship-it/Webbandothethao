@@ -8,6 +8,8 @@ type CheckoutOrderItemInput = {
 type CreateCheckoutOrderInput = {
   userId: string;
   total: number;
+  subTotal?: number;
+  promotionAssignmentId?: string | null;
   shippingAddress: string;
   items: CheckoutOrderItemInput[];
 };
@@ -23,6 +25,8 @@ export async function createCheckoutOrder(
   const payload = {
     p_user_id: input.userId,
     p_total: input.total,
+    p_subtotal: input.subTotal ?? input.total,
+    p_promotion_assignment_id: input.promotionAssignmentId || null,
     p_shipping_address: input.shippingAddress,
     p_status: 'pending',
     p_items: input.items,
