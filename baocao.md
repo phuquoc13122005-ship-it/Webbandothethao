@@ -237,3 +237,33 @@
 - **Tính năng:** Hiển thị kho mã khuyến mãi ở checkout kiểu Shopee
 - **Trạng thái:** Tiếp tục làm dở dang
 - **Mô tả ngắn gọn:** Cập nhật `auth-server.js` thêm API `GET /api/promotions/my-available` để trả danh sách mã chưa dùng của user hiện tại kèm trạng thái có áp dụng được theo tổng đơn (`can_apply`, `disabled_reason`); cập nhật `WebDoTheThao/project/src/lib/db.ts` thêm hàm `getMyAvailablePromotions`; cập nhật `WebDoTheThao/project/src/pages/CheckoutPage.tsx` thêm block `Voucher của bạn` hiển thị mã được phát, điều kiện đơn tối thiểu, và nút `Áp dụng` một chạm để tự điền/áp mã ngay.
+
+- **Ngày/Giờ:** 2026-04-10 15:20:43
+- **Tính năng:** Khôi phục mục Quản lý tồn kho trong menu Sản phẩm
+- **Trạng thái:** Tiếp tục làm dở dang
+- **Mô tả ngắn gọn:** Cập nhật `WebDoTheThao/project/src/pages/StaffDashboardPage.tsx` để thêm lại mục `Quản lý tồn kho` (`inventory`) trong `productMenuItems` của sidebar Sản phẩm; giữ nguyên các mục kho khác đã xoá trước đó.
+
+- **Ngày/Giờ:** 2026-04-10 15:23:11
+- **Tính năng:** Hiển thị ảnh nhỏ sản phẩm trong mục Quản lý tồn kho
+- **Trạng thái:** Tiếp tục làm dở dang
+- **Mô tả ngắn gọn:** Cập nhật `WebDoTheThao/project/src/pages/StaffDashboardPage.tsx` tại tab `inventory` để hiển thị thumbnail ảnh sản phẩm kích thước nhỏ (`w-14 h-14`) bên cạnh tên/SKU; thêm fallback `Không ảnh` khi sản phẩm chưa có ảnh để dễ nhận biết từng sản phẩm.
+
+- **Ngày/Giờ:** 2026-04-10 15:26:14
+- **Tính năng:** Hiển thị ảnh nhỏ sản phẩm trong danh sách sản phẩm admin
+- **Trạng thái:** Tiếp tục làm dở dang
+- **Mô tả ngắn gọn:** Cập nhật `WebDoTheThao/project/src/pages/StaffDashboardPage.tsx` tại tab `products_list` để hiển thị thumbnail ảnh nhỏ (`w-14 h-14`) cạnh tên/giá sản phẩm; bổ sung fallback `Không ảnh` cho sản phẩm chưa có ảnh, giúp nhận diện nhanh trong danh sách.
+
+- **Ngày/Giờ:** 2026-04-10 15:31:44
+- **Tính năng:** Thêm thống kê tổng số sản phẩm trên Admin Dashboard
+- **Trạng thái:** Tiếp tục làm dở dang
+- **Mô tả ngắn gọn:** Cập nhật `WebDoTheThao/project/src/pages/StaffDashboardPage.tsx` tại khối overview để thêm card `Tổng sản phẩm` lấy trực tiếp từ dữ liệu `products` đã load từ DB (`products.length`), hiển thị cùng kiểu giao diện thống kê với card `Tổng doanh thu`.
+
+- **Ngày/Giờ:** 2026-04-10 15:35:54
+- **Tính năng:** Gợi ý danh mục khi focus ô tìm kiếm trên header
+- **Trạng thái:** Tiếp tục làm dở dang
+- **Mô tả ngắn gọn:** Cập nhật `WebDoTheThao/project/src/components/layout/Header.tsx` để khi người dùng bấm vào ô tìm kiếm desktop sẽ hiện dropdown `Tìm kiếm nhiều nhất` lấy từ danh mục trong DB (`categories`) dưới dạng nút gợi ý; bấm nút sẽ chuyển thẳng đến trang danh mục tương ứng, đồng thời vẫn giữ nguyên khả năng nhập tay và submit tìm kiếm theo từ khóa.
+
+- **Ngày/Giờ:** 2026-04-10 15:39:27
+- **Tính năng:** Gợi ý sản phẩm theo từ khóa gõ trong ô tìm kiếm header
+- **Trạng thái:** Tiếp tục làm dở dang
+- **Mô tả ngắn gọn:** Cập nhật `WebDoTheThao/project/src/components/layout/Header.tsx` để khi người dùng gõ từ khóa (ví dụ `vợt`) sẽ debounce truy vấn DB bảng `products` theo `name` và hiện danh sách đề xuất ngay dưới block danh mục; mỗi đề xuất hiển thị ảnh nhỏ, tên, giá và có thể bấm trực tiếp để mở trang chi tiết sản phẩm, đồng thời vẫn giữ tìm kiếm nhập tay như cũ.

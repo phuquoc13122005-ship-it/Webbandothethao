@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import {
   ShoppingCart,
@@ -17,7 +17,8 @@ import {
 import { useAuth } from '../../contexts/AuthContext';
 import { useCart } from '../../contexts/CartContext';
 import { db } from '../../lib/db';
-import type { Category } from '../../types';
+import { formatPrice } from '../../lib/formatters';
+import type { Category, Product } from '../../types';
 
 export default function Header() {
   const { user, signOut } = useAuth();
@@ -27,9 +28,13 @@ export default function Header() {
   const [userMenuOpen, setUserMenuOpen] = useState(false);
   const [categoryMenuOpen, setCategoryMenuOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
+  const [searchSuggestOpen, setSearchSuggestOpen] = useState(false);
+  const [searchProductSuggestions, setSearchProductSuggestions] = useState<Product[]>([]);
+  const [searchSuggestLoading, setSearchSuggestLoading] = useState(false);
   const [headerCategories, setHeaderCategories] = useState<Category[]>([]);
   const [menuLoading, setMenuLoading] = useState(false);
   const [currentUserRole, setCurrentUserRole] = useState<'admin' | 'staff' | 'customer'>('customer');
+  const searchBoxRef = useRef<HTMLDivElement | null>(null);
 
   const fetchHeaderMenuData = useCallback(async () => {
     setMenuLoading(true);
@@ -80,12 +85,55 @@ export default function Header() {
     return chunks.filter(chunk => chunk.length > 0);
   }, [headerCategories]);
 
+  const quickSearchCategories = useMemo(() => {
+    const normalizedPriority = ['vot', 'giay', 'ao', 'quan', 'vay'];
+    const scored = [...headerCategories].map(category => {
+      const normalized = String(category.name || '')
+        .toLowerCase()
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '');
+      const priorityIndex = normalizedPriority.findIndex(keyword => normalized.includes(keyword));
+      return {
+        category,
+        score: priorityIndex >= 0 ? priorityIndex : normalizedPriority.length + 1,
+      };
+    });
+    return scored
+      .sort((a, b) => (a.score - b.score) || String(a.category.name || '').localeCompare(String(b.category.name || ''), 'vi'))
+      .map(item => item.category)
+      .slice(0, 8);
+  }, [headerCategories]);
+
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault();
     if (searchQuery.trim()) {
       navigate(`/products?search=${encodeURIComponent(searchQuery.trim())}`);
       setSearchQuery('');
+      setSearchSuggestOpen(false);
     }
+  };
+
+  const handleQuickCategorySelect = (category: Category) => {
+    const slug = String(category.slug || '').trim();
+    if (slug) {
+      navigate(`/products?category=${encodeURIComponent(slug)}`);
+    } else {
+      navigate(`/products?search=${encodeURIComponent(String(category.name || '').trim())}`);
+    }
+    setSearchSuggestOpen(false);
+    setSearchQuery('');
+  };
+
+  const handleQuickProductSelect = (product: Product) => {
+    const slug = String(product.slug || '').trim();
+    if (slug) {
+      navigate(`/products/${encodeURIComponent(slug)}`);
+    } else {
+      navigate(`/products?search=${encodeURIComponent(String(product.name || '').trim())}`);
+    }
+    setSearchSuggestOpen(false);
+    setSearchQuery('');
+    setSearchProductSuggestions([]);
   };
 
   const handleSignOut = async () => {
@@ -93,6 +141,52 @@ export default function Header() {
     setUserMenuOpen(false);
     navigate('/');
   };
+
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (!searchBoxRef.current) return;
+      if (!searchBoxRef.current.contains(event.target as Node)) {
+        setSearchSuggestOpen(false);
+      }
+    };
+    window.addEventListener('mousedown', handleClickOutside);
+    return () => {
+      window.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!searchSuggestOpen) return;
+    const keyword = searchQuery.trim();
+    if (!keyword) {
+      setSearchProductSuggestions([]);
+      setSearchSuggestLoading(false);
+      return;
+    }
+
+    let active = true;
+    setSearchSuggestLoading(true);
+    const timer = window.setTimeout(async () => {
+      const { data, error } = await db
+        .from('products')
+        .select('id, name, slug, price, image_url')
+        .ilike('name', `%${keyword}%`)
+        .order('created_at', { ascending: false })
+        .limit(6);
+      if (!active) return;
+      if (error) {
+        setSearchProductSuggestions([]);
+      } else {
+        setSearchProductSuggestions((data || []) as Product[]);
+      }
+      setSearchSuggestLoading(false);
+    }, 220);
+
+    return () => {
+      active = false;
+      window.clearTimeout(timer);
+    };
+  }, [searchQuery, searchSuggestOpen]);
 
   return (
     <header className="sticky top-0 z-50 bg-white shadow-sm border-b border-slate-200">
@@ -109,15 +203,73 @@ export default function Header() {
 
           <div className="hidden lg:flex flex-1 max-w-3xl">
             <form onSubmit={handleSearch} className="w-full flex items-center">
-              <div className="relative">
+              <div ref={searchBoxRef} className="relative flex-1">
                 <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
                 <input
                   type="text"
                   placeholder="Tìm kiếm vợt, giày, quần áo thể thao..."
                   value={searchQuery}
                   onChange={e => setSearchQuery(e.target.value)}
+                  onFocus={() => setSearchSuggestOpen(true)}
                   className="w-full h-11 pl-11 pr-4 text-sm bg-white border border-slate-300 rounded-l-xl focus:outline-none focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500"
                 />
+                {searchSuggestOpen && (
+                  <div className="absolute top-12 left-0 w-full bg-white border border-slate-200 rounded-xl shadow-xl p-3 z-40">
+                    {quickSearchCategories.length > 0 && (
+                      <>
+                        <p className="text-sm font-bold text-slate-700 uppercase tracking-wide mb-2">Tìm kiếm nhiều nhất</p>
+                        <div className="flex flex-wrap gap-2">
+                          {quickSearchCategories.map(category => (
+                            <button
+                              key={category.id}
+                              type="button"
+                              onClick={() => handleQuickCategorySelect(category)}
+                              className="px-3 py-1.5 rounded-md text-sm bg-slate-100 text-slate-700 hover:bg-teal-50 hover:text-teal-700 transition-colors"
+                            >
+                              {category.name}
+                            </button>
+                          ))}
+                        </div>
+                      </>
+                    )}
+                    {searchQuery.trim() && (
+                      <div className={`${quickSearchCategories.length > 0 ? 'mt-3 pt-3 border-t border-slate-200' : ''}`}>
+                        {searchSuggestLoading ? (
+                          <p className="text-sm text-slate-500">Đang tìm sản phẩm...</p>
+                        ) : searchProductSuggestions.length === 0 ? (
+                          <p className="text-sm text-slate-500">Không có sản phẩm phù hợp.</p>
+                        ) : (
+                          <div className="space-y-1">
+                            {searchProductSuggestions.map(product => (
+                              <button
+                                key={product.id}
+                                type="button"
+                                onClick={() => handleQuickProductSelect(product)}
+                                className="w-full text-left px-2 py-2 rounded-lg hover:bg-slate-50 transition-colors"
+                              >
+                                <div className="flex items-center gap-3">
+                                  {product.image_url ? (
+                                    <img
+                                      src={product.image_url}
+                                      alt={product.name}
+                                      className="w-10 h-10 rounded-md object-cover border border-slate-200 flex-shrink-0"
+                                    />
+                                  ) : (
+                                    <div className="w-10 h-10 rounded-md bg-slate-100 border border-slate-200 flex-shrink-0" />
+                                  )}
+                                  <div className="min-w-0">
+                                    <p className="text-sm font-medium text-slate-800 line-clamp-1">{product.name}</p>
+                                    <p className="text-sm font-semibold text-orange-600">{formatPrice(Number(product.price || 0))}</p>
+                                  </div>
+                                </div>
+                              </button>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
               <button type="submit" className="h-11 px-5 bg-teal-600 text-white text-sm font-semibold rounded-r-xl hover:bg-teal-700 transition-colors">
                 Tìm kiếm

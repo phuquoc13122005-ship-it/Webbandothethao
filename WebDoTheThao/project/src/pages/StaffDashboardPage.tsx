@@ -2324,6 +2324,7 @@ export default function StaffDashboardPage() {
 
   const productMenuItems: Array<{ id: StaffTab; label: string }> = [
     { id: 'products_list', label: 'Danh sách sản phẩm' },
+    { id: 'inventory', label: 'Quản lý tồn kho' },
     { id: 'new_products', label: 'Sản phẩm mới' },
     { id: 'featured_products', label: 'Sản phẩm nổi bật' },
   ];
@@ -2508,7 +2509,7 @@ export default function StaffDashboardPage() {
 
           {activeTab === 'overview' && (
             <div className="space-y-6">
-              <div className="grid grid-cols-1 lg:grid-cols-4 gap-4">
+              <div className="grid grid-cols-1 lg:grid-cols-5 gap-4">
                 <div className="bg-white border border-slate-200 rounded-2xl p-5">
                   <div className="w-10 h-10 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center mb-3">
                     <BadgeDollarSign className="w-5 h-5" />
@@ -2529,6 +2530,13 @@ export default function StaffDashboardPage() {
                   </div>
                   <p className="text-2xl font-bold text-slate-900">{orders.length}</p>
                   <p className="text-sm text-slate-500">Tổng đơn hàng</p>
+                </div>
+                <div className="bg-white border border-slate-200 rounded-2xl p-5">
+                  <div className="w-10 h-10 rounded-xl bg-cyan-50 text-cyan-600 flex items-center justify-center mb-3">
+                    <Boxes className="w-5 h-5" />
+                  </div>
+                  <p className="text-2xl font-bold text-slate-900">{products.length}</p>
+                  <p className="text-sm text-slate-500">Tổng sản phẩm</p>
                 </div>
                 <div className="bg-white border border-slate-200 rounded-2xl p-5">
                   <div className="w-10 h-10 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center mb-3">
@@ -3290,9 +3298,22 @@ export default function StaffDashboardPage() {
                           </div>
                         ) : (
                           <div className="flex flex-wrap items-center justify-between gap-3">
-                            <div>
-                              <p className="font-semibold text-slate-900">{product.name}</p>
-                              <p className="text-sm text-slate-500">{product.brand} - {formatPrice(product.price)}</p>
+                            <div className="flex items-center gap-3 min-w-0">
+                              {product.image_url ? (
+                                <img
+                                  src={product.image_url}
+                                  alt={product.name}
+                                  className="w-14 h-14 rounded-lg object-cover border border-slate-200 flex-shrink-0"
+                                />
+                              ) : (
+                                <div className="w-14 h-14 rounded-lg bg-slate-100 border border-slate-200 flex items-center justify-center text-[10px] text-slate-500 flex-shrink-0">
+                                  Không ảnh
+                                </div>
+                              )}
+                              <div className="min-w-0">
+                                <p className="font-semibold text-slate-900">{product.name}</p>
+                                <p className="text-sm text-slate-500">{product.brand} - {formatPrice(product.price)}</p>
+                              </div>
                             </div>
                             <div className="flex items-center gap-3">
                               <div className="text-sm text-slate-600">
@@ -3327,12 +3348,25 @@ export default function StaffDashboardPage() {
                         ?? (selectedSize ? String(sizeStockMap[selectedSize] ?? 0) : String(product.stock));
                       return (
                         <div key={product.id} className="border border-slate-100 rounded-xl p-4 flex flex-wrap items-center justify-between gap-3">
-                          <div>
-                            <p className="font-semibold text-slate-900">{product.name}</p>
-                            <p className="text-sm text-slate-500">SKU: {product.slug} • {product.brand}</p>
-                            {sizeOptions.length > 0 && (
-                              <p className="text-xs text-slate-500 mt-1">Size khả dụng: {sizeOptions.join(', ')}</p>
+                          <div className="flex items-center gap-3 min-w-0">
+                            {product.image_url ? (
+                              <img
+                                src={product.image_url}
+                                alt={product.name}
+                                className="w-14 h-14 rounded-lg object-cover border border-slate-200 flex-shrink-0"
+                              />
+                            ) : (
+                              <div className="w-14 h-14 rounded-lg bg-slate-100 border border-slate-200 flex items-center justify-center text-[10px] text-slate-500 flex-shrink-0">
+                                Không ảnh
+                              </div>
                             )}
+                            <div className="min-w-0">
+                              <p className="font-semibold text-slate-900">{product.name}</p>
+                              <p className="text-sm text-slate-500">SKU: {product.slug} • {product.brand}</p>
+                              {sizeOptions.length > 0 && (
+                                <p className="text-xs text-slate-500 mt-1">Size khả dụng: {sizeOptions.join(', ')}</p>
+                              )}
+                            </div>
                           </div>
                           <div className="flex items-center gap-2">
                             {sizeOptions.length > 0 && (
