@@ -1,0 +1,25 @@
+$kind: http-request
+url: "{{baseUrl}}/api/db/query"
+method: POST
+headers:
+  Content-Type: application/json
+body:
+  type: text
+  content: |-
+    {
+      "table": "users",
+      "select": "id,email",
+      "filters": [
+        { "column": "email", "op": "eq", "value": "{{userEmail}}" }
+      ],
+      "limit": 1
+    }
+scripts:
+  - type: afterResponse
+    code: >-
+      const rows = pm.response.json()?.data || [];
+
+      if (Array.isArray(rows) && rows.length > 0)
+      pm.collectionVariables.set('targetUserId', rows[0].id || '');
+    language: text/javascript
+order: 1000

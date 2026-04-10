@@ -1,0 +1,6 @@
+$kind: http-request
+url: "{{baseUrl}}/api/promotions/my-available?order_subtotal={{orderSubtotal}}"
+method: GET
+queryParams:
+  order_subtotal: "{{orderSubtotal}}"
+order: 1000

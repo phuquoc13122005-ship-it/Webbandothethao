@@ -1,0 +1,16 @@
+$kind: http-request
+url: "{{baseUrl}}/api/auth/admin/create-account"
+method: POST
+headers:
+  Content-Type: application/json
+body:
+  type: text
+  content: |-
+    {
+      "email": "{{tempAccountEmail}}",
+      "full_name": "Staff tu collection admin",
+      "phone": "0909001111",
+      "address": "HCM",
+      "role": "staff"
+    }
+order: 1000

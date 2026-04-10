@@ -1,0 +1,19 @@
+$kind: http-request
+url: "{{baseUrl}}/api/db/update"
+method: POST
+headers:
+  Content-Type: application/json
+body:
+  type: text
+  content: |-
+    {
+      "table": "home_category_sections",
+      "values": {
+        "title": "Section Admin Collection Updated"
+      },
+      "filters": [
+        { "column": "title", "op": "eq", "value": "Section Admin Collection" }
+      ],
+      "select": "*"
+    }
+order: 3000

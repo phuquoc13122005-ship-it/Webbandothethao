@@ -1,0 +1,13 @@
+$kind: http-request
+url: "{{baseUrl}}/api/promotions/apply-preview"
+method: POST
+headers:
+  Content-Type: application/json
+body:
+  type: text
+  content: |-
+    {
+      "code": "{{promotionCode}}",
+      "order_subtotal": {{orderSubtotal}}
+    }
+order: 2000

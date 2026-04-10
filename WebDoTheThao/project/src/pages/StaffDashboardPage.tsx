@@ -13,6 +13,8 @@ import {
   Pencil,
   Save,
   Star,
+  Eye,
+  EyeOff,
   Tags,
   TicketPercent,
   Trash2,
@@ -436,13 +438,18 @@ export default function StaffDashboardPage() {
   const [customers, setCustomers] = useState<AccountProfile[]>([]);
   const [editingAccountId, setEditingAccountId] = useState<string | null>(null);
   const [editAccountFullName, setEditAccountFullName] = useState('');
+  const [editAccountEmail, setEditAccountEmail] = useState('');
   const [editAccountPhone, setEditAccountPhone] = useState('');
   const [editAccountAddress, setEditAccountAddress] = useState('');
   const [editAccountRole, setEditAccountRole] = useState<'customer' | 'staff'>('customer');
+  const [editAccountNewPassword, setEditAccountNewPassword] = useState('');
+  const [showEditAccountPassword, setShowEditAccountPassword] = useState(false);
   const [newAccountFullName, setNewAccountFullName] = useState('');
   const [newAccountPhone, setNewAccountPhone] = useState('');
   const [newAccountAddress, setNewAccountAddress] = useState('');
   const [newAccountEmail, setNewAccountEmail] = useState('');
+  const [newAccountPassword, setNewAccountPassword] = useState('');
+  const [showNewAccountPassword, setShowNewAccountPassword] = useState(false);
   const [newAccountRole, setNewAccountRole] = useState<'customer' | 'staff'>('customer');
   const [createAccountMessage, setCreateAccountMessage] = useState('');
   const [createAccountError, setCreateAccountError] = useState('');
@@ -1059,22 +1066,37 @@ export default function StaffDashboardPage() {
   const startEditAccount = (account: AccountProfile) => {
     setEditingAccountId(account.id);
     setEditAccountFullName(account.full_name || '');
+    setEditAccountEmail(account.email || '');
     setEditAccountPhone(account.phone || '');
     setEditAccountAddress(account.address || '');
     setEditAccountRole((account.role === 'staff' ? 'staff' : 'customer'));
+    setEditAccountNewPassword('');
+    setShowEditAccountPassword(false);
   };
 
   const cancelEditAccount = () => {
     setEditingAccountId(null);
     setEditAccountFullName('');
+    setEditAccountEmail('');
     setEditAccountPhone('');
     setEditAccountAddress('');
     setEditAccountRole('customer');
+    setEditAccountNewPassword('');
+    setShowEditAccountPassword(false);
   };
 
   const handleUpdateAccount = async (accountId: string) => {
     if (!isAdmin) {
       window.alert('Chỉ admin mới có quyền chỉnh sửa tài khoản.');
+      return;
+    }
+    const emailValue = editAccountEmail.trim().toLowerCase();
+    if (!emailValue || !emailValue.includes('@')) {
+      window.alert('Email không hợp lệ.');
+      return;
+    }
+    if (editAccountNewPassword && editAccountNewPassword.length < 6) {
+      window.alert('Mật khẩu mới phải có ít nhất 6 ký tự.');
       return;
     }
     const payload = {
@@ -1085,13 +1107,52 @@ export default function StaffDashboardPage() {
     };
     setSubmitting(true);
     const { error: updateError } = await db.from('profiles').update(payload).eq('id', accountId);
-    setSubmitting(false);
     if (updateError) {
+      setSubmitting(false);
       window.alert(updateError.message || 'Không thể cập nhật tài khoản.');
       return;
     }
-    setCustomers(prev => prev.map(item => (item.id === accountId ? { ...item, ...payload } as AccountProfile : item)));
+    const { error: updateUserError } = await db
+      .from('users')
+      .update({ email: emailValue })
+      .eq('id', accountId);
+    if (updateUserError) {
+      setSubmitting(false);
+      if (String(updateUserError?.message || '').includes('Duplicate entry')) {
+        window.alert('Email đã tồn tại trong hệ thống.');
+      } else {
+        window.alert(updateUserError.message || 'Không thể cập nhật email tài khoản.');
+      }
+      return;
+    }
+    if (editAccountNewPassword) {
+      const { error: resetPasswordError } = await db.auth.adminResetAccountPassword({
+        targetUserId: accountId,
+        newPassword: editAccountNewPassword,
+      });
+      if (resetPasswordError) {
+        setSubmitting(false);
+        const code = String(resetPasswordError?.message || '');
+        if (code === 'INVALID_PASSWORD') {
+          window.alert('Mật khẩu mới không hợp lệ (ít nhất 6 ký tự).');
+        } else if (code === 'FORBIDDEN') {
+          window.alert('Bạn không có quyền đổi mật khẩu tài khoản này.');
+        } else if (code === 'USER_NOT_FOUND') {
+          window.alert('Không tìm thấy tài khoản cần đổi mật khẩu.');
+        } else {
+          window.alert(resetPasswordError?.message || 'Không thể cập nhật mật khẩu tài khoản.');
+        }
+        return;
+      }
+    }
+    setSubmitting(false);
+    setCustomers(prev => prev.map(item => (
+      item.id === accountId
+        ? { ...item, ...payload, email: emailValue } as AccountProfile
+        : item
+    )));
     cancelEditAccount();
+    window.alert(editAccountNewPassword ? 'Đã lưu thông tin và cập nhật mật khẩu tài khoản.' : 'Đã lưu thông tin tài khoản.');
   };
 
   const handleCreateAccount = async (event: React.FormEvent) => {
@@ -1107,12 +1168,17 @@ export default function StaffDashboardPage() {
       setCreateAccountError('Email không hợp lệ.');
       return;
     }
+    if (!newAccountPassword || newAccountPassword.length < 6) {
+      setCreateAccountError('Mật khẩu phải có ít nhất 6 ký tự.');
+      return;
+    }
     setSubmitting(true);
     const { data, error: createError } = await db.auth.adminCreateAccount({
       fullName: newAccountFullName.trim(),
       phone: newAccountPhone.trim(),
       address: newAccountAddress.trim(),
       email,
+      password: newAccountPassword,
       role: newAccountRole,
     });
     setSubmitting(false);
@@ -1122,6 +1188,8 @@ export default function StaffDashboardPage() {
         setCreateAccountError('Email đã tồn tại trong hệ thống.');
       } else if (errorCode === 'FORBIDDEN') {
         setCreateAccountError('Bạn không có quyền tạo tài khoản.');
+      } else if (errorCode === 'INVALID_PASSWORD') {
+        setCreateAccountError('Mật khẩu không hợp lệ (ít nhất 6 ký tự).');
       } else {
         setCreateAccountError(createError?.message || 'Không thể tạo tài khoản.');
       }
@@ -1135,6 +1203,8 @@ export default function StaffDashboardPage() {
     setNewAccountPhone('');
     setNewAccountAddress('');
     setNewAccountEmail('');
+    setNewAccountPassword('');
+    setShowNewAccountPassword(false);
     setNewAccountRole('customer');
     setCreateAccountMessage(
       temporaryPassword
@@ -4121,6 +4191,24 @@ export default function StaffDashboardPage() {
                       className="h-10 px-3 border border-slate-200 rounded-lg text-sm bg-white"
                       required
                     />
+                    <div className="relative">
+                      <input
+                        type={showNewAccountPassword ? 'text' : 'password'}
+                        value={newAccountPassword}
+                        onChange={event => setNewAccountPassword(event.target.value)}
+                        placeholder="Mật khẩu * (ít nhất 6 ký tự)"
+                        className="h-10 w-full px-3 pr-10 border border-slate-200 rounded-lg text-sm bg-white"
+                        required
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowNewAccountPassword(prev => !prev)}
+                        className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-700 p-1"
+                        title={showNewAccountPassword ? 'Ẩn mật khẩu' : 'Hiện mật khẩu'}
+                      >
+                        {showNewAccountPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                      </button>
+                    </div>
                     <input
                       value={newAccountPhone}
                       onChange={event => setNewAccountPhone(event.target.value)}
@@ -4172,18 +4260,29 @@ export default function StaffDashboardPage() {
                             onChange={event => setEditAccountFullName(event.target.value)}
                             placeholder="Họ tên"
                             className="h-10 px-3 border border-slate-200 rounded-lg text-sm"
+                            autoComplete="off"
+                          />
+                          <input
+                            type="email"
+                            value={editAccountEmail}
+                            onChange={event => setEditAccountEmail(event.target.value)}
+                            placeholder="Email"
+                            className="h-10 px-3 border border-slate-200 rounded-lg text-sm"
+                            autoComplete="off"
                           />
                           <input
                             value={editAccountPhone}
                             onChange={event => setEditAccountPhone(event.target.value)}
                             placeholder="Số điện thoại"
                             className="h-10 px-3 border border-slate-200 rounded-lg text-sm"
+                            autoComplete="off"
                           />
                           <input
                             value={editAccountAddress}
                             onChange={event => setEditAccountAddress(event.target.value)}
                             placeholder="Địa chỉ"
-                            className="h-10 px-3 border border-slate-200 rounded-lg text-sm md:col-span-2"
+                            className="h-10 px-3 border border-slate-200 rounded-lg text-sm"
+                            autoComplete="off"
                           />
                           <select
                             value={editAccountRole}
@@ -4193,6 +4292,24 @@ export default function StaffDashboardPage() {
                             <option value="customer">Khách hàng</option>
                             <option value="staff">Nhân viên</option>
                           </select>
+                          <div className="relative">
+                            <input
+                              type={showEditAccountPassword ? 'text' : 'password'}
+                              value={editAccountNewPassword}
+                              onChange={event => setEditAccountNewPassword(event.target.value)}
+                              placeholder="Mật khẩu mới (để trống nếu không đổi)"
+                              className="h-10 w-full px-3 pr-10 border border-slate-200 rounded-lg text-sm bg-white"
+                              autoComplete="new-password"
+                            />
+                            <button
+                              type="button"
+                              onClick={() => setShowEditAccountPassword(prev => !prev)}
+                              className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-700 p-1"
+                              title={showEditAccountPassword ? 'Ẩn mật khẩu' : 'Hiện mật khẩu'}
+                            >
+                              {showEditAccountPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                            </button>
+                          </div>
                         </div>
                         <div className="flex items-center gap-2 pt-1">
                           <button
@@ -4217,9 +4334,9 @@ export default function StaffDashboardPage() {
                     ) : (
                       <>
                         <p className="font-semibold text-slate-900">{account.full_name || 'Chưa cập nhật tên'}</p>
-                        <p className="text-sm text-slate-500">Email: {account.email || '---'}</p>
-                        <p className="text-sm text-slate-500">SĐT: {account.phone || '---'}</p>
-                        <p className="text-sm text-slate-500">Địa chỉ: {account.address || '---'}</p>
+                        <p className="text-sm text-slate-500">Email: {account.email || ''}</p>
+                        <p className="text-sm text-slate-500">SĐT: {account.phone || ''}</p>
+                        <p className="text-sm text-slate-500">Địa chỉ: {account.address || ''}</p>
                         <p className="text-sm text-slate-500">
                           Vai trò: {(account.role || 'customer') === 'staff' ? 'Nhân viên' : 'Khách hàng'}
                         </p>

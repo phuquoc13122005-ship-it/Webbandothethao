@@ -267,3 +267,43 @@
 - **Tính năng:** Gợi ý sản phẩm theo từ khóa gõ trong ô tìm kiếm header
 - **Trạng thái:** Tiếp tục làm dở dang
 - **Mô tả ngắn gọn:** Cập nhật `WebDoTheThao/project/src/components/layout/Header.tsx` để khi người dùng gõ từ khóa (ví dụ `vợt`) sẽ debounce truy vấn DB bảng `products` theo `name` và hiện danh sách đề xuất ngay dưới block danh mục; mỗi đề xuất hiển thị ảnh nhỏ, tên, giá và có thể bấm trực tiếp để mở trang chi tiết sản phẩm, đồng thời vẫn giữ tìm kiếm nhập tay như cũ.
+
+- **Ngày/Giờ:** 2026-04-10 15:54:36
+- **Tính năng:** Soạn tài liệu hướng dẫn test Postman cho user/admin
+- **Trạng thái:** Tiếp tục làm dở dang
+- **Mô tả ngắn gọn:** Tạo mới `postman.md` ở thư mục gốc, tổng hợp đầy đủ quy trình test API backend bằng Postman cho luồng user và admin (thứ tự chạy, body mẫu, checklist kỳ vọng), đồng thời ghi rõ lưu ý quan trọng về key filter `op` thay vì `operator` để tránh lỗi query/update.
+
+- **Ngày/Giờ:** 2026-04-10 16:01:29
+- **Tính năng:** Tạo bộ test full API Postman và README chạy chi tiết
+- **Trạng thái:** Làm mới hoàn toàn
+- **Mô tả ngắn gọn:** Tạo mới `postman-full-api.collection.json` chứa kịch bản test full API (public, auth user/admin, promotions, reviews, db crud, rpc checkout) có sẵn biến và script lưu ID tự động để chạy liên hoàn; tạo mới `README_POSTMAN.md` hướng dẫn chi tiết cách import, cấu hình biến, thứ tự chạy, checklist báo cáo, lưu ý session/quyền và các lỗi thường gặp.
+
+- **Ngày/Giờ:** 2026-04-10 16:12:52
+- **Tính năng:** Tách collection Postman theo vai trò User/Admin và cập nhật hướng dẫn
+- **Trạng thái:** Tiếp tục làm dở dang
+- **Mô tả ngắn gọn:** Tạo mới `postman-user-api.collection.json` và `postman-admin-api.collection.json` để test tách riêng theo role giúp dễ kiểm tra quyền/session và thuận tiện báo cáo; cập nhật lại `README_POSTMAN.md` hướng dẫn chi tiết cách import 2 collection mới, cấu hình variables cho từng role, thứ tự chạy, cách lấy evidence báo cáo và troubleshooting.
+
+- **Ngày/Giờ:** 2026-04-10 16:35:30
+- **Tính năng:** Bổ sung trường mật khẩu khi tạo tài khoản khách hàng/nhân viên
+- **Trạng thái:** Tiếp tục làm dở dang
+- **Mô tả ngắn gọn:** Cập nhật `WebDoTheThao/project/src/pages/StaffDashboardPage.tsx` thêm ô nhập `Mật khẩu` trong form tạo tài khoản và validate tối thiểu 6 ký tự; cập nhật `WebDoTheThao/project/src/lib/db.ts` để gửi `password` qua API; cập nhật `auth-server.js` endpoint `POST /api/auth/admin/create-account` nhận `password` do admin nhập (nếu không gửi thì vẫn sinh mật khẩu tạm như cũ để tương thích), đồng thời trả lỗi `INVALID_PASSWORD` khi mật khẩu không đạt chuẩn.
+
+- **Ngày/Giờ:** 2026-04-10 16:39:20
+- **Tính năng:** Thêm nút ẩn/hiện mật khẩu cho form tạo tài khoản admin
+- **Trạng thái:** Tiếp tục làm dở dang
+- **Mô tả ngắn gọn:** Cập nhật `WebDoTheThao/project/src/pages/StaffDashboardPage.tsx` để ô `Mật khẩu` trong form `Tạo tài khoản` có biểu tượng con mắt (`Eye/EyeOff`) cho phép bật/tắt hiển thị mật khẩu khi nhập, đồng thời tự reset về trạng thái ẩn sau khi tạo tài khoản thành công.
+
+- **Ngày/Giờ:** 2026-04-10 16:41:32
+- **Tính năng:** Cho phép admin đổi mật khẩu tài khoản khách hàng/nhân viên trong mục chỉnh sửa
+- **Trạng thái:** Tiếp tục làm dở dang
+- **Mô tả ngắn gọn:** Cập nhật `auth-server.js` thêm API `POST /api/auth/admin/reset-account-password` (chỉ admin, hash mật khẩu mới, validate tối thiểu 6 ký tự); cập nhật `WebDoTheThao/project/src/lib/db.ts` thêm hàm `db.auth.adminResetAccountPassword`; cập nhật `WebDoTheThao/project/src/pages/StaffDashboardPage.tsx` thêm ô `Mật khẩu mới (để trống nếu không đổi)` kèm icon mắt trong form chỉnh sửa tài khoản và lưu mật khẩu mới cùng lúc với thông tin profile.
+
+- **Ngày/Giờ:** 2026-04-10 16:47:06
+- **Tính năng:** Mở rộng chỉnh sửa đầy đủ thông tin tài khoản khách hàng/nhân viên cho admin
+- **Trạng thái:** Tiếp tục làm dở dang
+- **Mô tả ngắn gọn:** Cập nhật `WebDoTheThao/project/src/pages/StaffDashboardPage.tsx` để form chỉnh sửa tài khoản cho phép sửa đầy đủ `họ tên, email, SĐT, địa chỉ, vai trò, mật khẩu mới`; đồng bộ lưu `profiles` và `users.email`, validate email hợp lệ, giữ trường chưa có dữ liệu ở trạng thái trống theo dữ liệu thực tế, và thêm `autocomplete` phù hợp để hạn chế tự động điền sai.
+
+- **Ngày/Giờ:** 2026-04-10 16:54:37
+- **Tính năng:** Căn lại bố cục trường địa chỉ cùng hàng với SĐT trong form chỉnh sửa tài khoản
+- **Trạng thái:** Tiếp tục làm dở dang
+- **Mô tả ngắn gọn:** Cập nhật `WebDoTheThao/project/src/pages/StaffDashboardPage.tsx` tại form edit tài khoản để trường `Địa chỉ` không còn chiếm toàn dòng (`md:col-span-2`), nhờ đó hiển thị cùng hàng với trường `Số điện thoại` theo bố cục 2 cột.

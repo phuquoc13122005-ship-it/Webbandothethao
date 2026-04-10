@@ -1,0 +1,13 @@
+$kind: http-request
+url: "{{baseUrl}}/api/reviews/moderate"
+method: POST
+headers:
+  Content-Type: application/json
+body:
+  type: text
+  content: |-
+    {
+      "review_id": "{{reviewId}}",
+      "status": "approved"
+    }
+order: 1000

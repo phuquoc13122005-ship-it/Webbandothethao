@@ -2,9 +2,11 @@
 workspace:
   id: 8c201c32-12b9-4c4b-8055-308fcaddc1ff
 
+# Each entry here maps a local resource to one or more corresponding objects in Postman Cloud
+
 cloudResources:
   collections:
-    ..\postman\collections\WebDoTheThao BE API Tests: 4b9861b0-369e-4572-bdd3-f9c81c6b3505
+    ..\postman\collections\WebDoTheThao USER API Tests: f35d2070-3b75-488d-945d-619962ba64f7
 
 # All resources in the `postman/` folder are automatically registered in Local View.
 # Point to additional files outside the `postman/` folder to register them individually. Example:

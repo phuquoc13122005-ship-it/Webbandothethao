@@ -1,0 +1,26 @@
+$kind: http-request
+url: "{{baseUrl}}/api/db/query"
+method: POST
+headers:
+  Content-Type: application/json
+body:
+  type: text
+  content: |-
+    {
+      "table": "reviews",
+      "select": "*",
+      "filters": [
+        { "column": "status", "op": "eq", "value": "pending" }
+      ],
+      "order": { "column": "created_at", "ascending": false },
+      "limit": 5
+    }
+scripts:
+  - type: afterResponse
+    code: >-
+      const rows = pm.response.json()?.data || [];
+
+      if (Array.isArray(rows) && rows.length > 0)
+      pm.collectionVariables.set('reviewId', rows[0].id || '');
+    language: text/javascript
+order: 3000

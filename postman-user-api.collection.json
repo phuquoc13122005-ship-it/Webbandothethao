@@ -1,0 +1,247 @@
+{
+  "info": {
+    "name": "WebDoTheThao USER API Tests",
+    "_postman_id": "b5ca3f44-d8f2-4062-8d31-f1c1f6f89640",
+    "description": "Collection test API cho luong User.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "baseUrl", "value": "http://localhost:4000" },
+    { "key": "userEmail", "value": "user.postman@example.com" },
+    { "key": "userPassword", "value": "123456" },
+    { "key": "userNewPassword", "value": "12345678" },
+    { "key": "productId", "value": "" },
+    { "key": "promotionCode", "value": "KMPOSTMAN10" },
+    { "key": "orderSubtotal", "value": "1200000" },
+    { "key": "reviewId", "value": "" },
+    { "key": "resetCode", "value": "" },
+    { "key": "otpToken", "value": "000000" }
+  ],
+  "item": [
+    {
+      "name": "0. Bootstrap public data",
+      "item": [
+        {
+          "name": "Query products (public)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 200', function () { pm.response.to.have.status(200); });",
+                  "const rows = pm.response.json()?.data || [];",
+                  "if (Array.isArray(rows) && rows.length > 0) pm.collectionVariables.set('productId', rows[0].id || '');"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"table\": \"products\",\n  \"select\": \"*\",\n  \"order\": { \"column\": \"created_at\", \"ascending\": false },\n  \"limit\": 10\n}"
+            },
+            "url": "{{baseUrl}}/api/db/query"
+          }
+        }
+      ]
+    },
+    {
+      "name": "1. User auth",
+      "item": [
+        {
+          "name": "Register",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{userEmail}}\",\n  \"password\": \"{{userPassword}}\",\n  \"full_name\": \"User Postman\"\n}"
+            },
+            "url": "{{baseUrl}}/api/auth/register"
+          }
+        },
+        {
+          "name": "Login",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{userEmail}}\",\n  \"password\": \"{{userPassword}}\"\n}"
+            },
+            "url": "{{baseUrl}}/api/auth/login"
+          }
+        },
+        {
+          "name": "Session",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/auth/session"
+          }
+        },
+        {
+          "name": "Current user",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/auth/user"
+          }
+        },
+        {
+          "name": "Change password",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"current_password\": \"{{userPassword}}\",\n  \"new_password\": \"{{userNewPassword}}\"\n}"
+            },
+            "url": "{{baseUrl}}/api/auth/change-password"
+          }
+        },
+        {
+          "name": "Send OTP",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{userEmail}}\",\n  \"shouldCreateUser\": false\n}"
+            },
+            "url": "{{baseUrl}}/api/auth/send-otp"
+          }
+        },
+        {
+          "name": "Verify OTP",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{userEmail}}\",\n  \"token\": \"{{otpToken}}\"\n}"
+            },
+            "url": "{{baseUrl}}/api/auth/verify-otp"
+          }
+        },
+        {
+          "name": "Forgot password request",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const body = pm.response.json() || {};",
+                  "const code = body?.data?.preview?.confirmationCode || '';",
+                  "if (code) pm.collectionVariables.set('resetCode', code);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{userEmail}}\"\n}"
+            },
+            "url": "{{baseUrl}}/api/auth/forgot-password/request"
+          }
+        },
+        {
+          "name": "Forgot password verify",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{userEmail}}\",\n  \"code\": \"{{resetCode}}\"\n}"
+            },
+            "url": "{{baseUrl}}/api/auth/forgot-password/verify"
+          }
+        },
+        {
+          "name": "Forgot password reset",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{userEmail}}\",\n  \"code\": \"{{resetCode}}\",\n  \"password\": \"{{userPassword}}\"\n}"
+            },
+            "url": "{{baseUrl}}/api/auth/forgot-password/reset"
+          }
+        }
+      ]
+    },
+    {
+      "name": "2. Promotions + Reviews",
+      "item": [
+        {
+          "name": "My available promotions",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/promotions/my-available?order_subtotal={{orderSubtotal}}"
+          }
+        },
+        {
+          "name": "Apply promotion preview",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"code\": \"{{promotionCode}}\",\n  \"order_subtotal\": {{orderSubtotal}}\n}"
+            },
+            "url": "{{baseUrl}}/api/promotions/apply-preview"
+          }
+        },
+        {
+          "name": "Get approved reviews by product (public)",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/reviews/by-product/{{productId}}"
+          }
+        },
+        {
+          "name": "Submit review",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const id = pm.response.json()?.data?.id || '';",
+                  "if (id) pm.collectionVariables.set('reviewId', id);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"product_id\": \"{{productId}}\",\n  \"full_name\": \"User Postman\",\n  \"phone\": \"0909000000\",\n  \"rating\": 5,\n  \"comment\": \"Review tu collection user\",\n  \"image_url\": \"\"\n}"
+            },
+            "url": "{{baseUrl}}/api/reviews/submit"
+          }
+        }
+      ]
+    },
+    {
+      "name": "3. Logout",
+      "item": [
+        {
+          "name": "Logout user",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/api/auth/logout"
+          }
+        }
+      ]
+    }
+  ]
+}

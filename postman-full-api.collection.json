@@ -1,0 +1,532 @@
+{
+  "info": {
+    "name": "WebDoTheThao Full API Tests",
+    "_postman_id": "f37d777f-5fef-4fcb-bf13-e9ca3f9368d8",
+    "description": "Collection test full API cho auth-server.js (user + admin + db + promotions + reviews + rpc).",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "baseUrl", "value": "http://localhost:4000" },
+    { "key": "userEmail", "value": "user.postman@example.com" },
+    { "key": "userPassword", "value": "123456" },
+    { "key": "userNewPassword", "value": "12345678" },
+    { "key": "adminEmail", "value": "admin@nikashop.com" },
+    { "key": "adminPassword", "value": "123456" },
+    { "key": "productId", "value": "" },
+    { "key": "promotionCode", "value": "KMPOSTMAN10" },
+    { "key": "promotionId", "value": "" },
+    { "key": "promotionAssignmentId", "value": "" },
+    { "key": "targetUserId", "value": "" },
+    { "key": "reviewId", "value": "" },
+    { "key": "orderSubtotal", "value": "1200000" },
+    { "key": "otpToken", "value": "000000" },
+    { "key": "resetCode", "value": "" },
+    { "key": "tempAccountEmail", "value": "staff.postman@example.com" }
+  ],
+  "item": [
+    {
+      "name": "0 - Public bootstrap",
+      "item": [
+        {
+          "name": "Query Products (public)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 200', function () { pm.response.to.have.status(200); });",
+                  "const data = pm.response.json()?.data || [];",
+                  "if (Array.isArray(data) && data.length > 0) { pm.collectionVariables.set('productId', data[0].id || ''); }"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"table\": \"products\",\n  \"select\": \"*\",\n  \"order\": { \"column\": \"created_at\", \"ascending\": false },\n  \"limit\": 10\n}"
+            },
+            "url": "{{baseUrl}}/api/db/query"
+          }
+        },
+        {
+          "name": "Query Categories (public)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"table\": \"categories\",\n  \"select\": \"*\",\n  \"order\": { \"column\": \"name\", \"ascending\": true },\n  \"limit\": 20\n}"
+            },
+            "url": "{{baseUrl}}/api/db/query"
+          }
+        }
+      ]
+    },
+    {
+      "name": "1 - User auth flow",
+      "item": [
+        {
+          "name": "Register user",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{userEmail}}\",\n  \"password\": \"{{userPassword}}\",\n  \"full_name\": \"User Postman\"\n}"
+            },
+            "url": "{{baseUrl}}/api/auth/register"
+          }
+        },
+        {
+          "name": "Login user",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('login ok', function () { pm.expect(pm.response.code).to.be.oneOf([200]); });",
+                  "const body = pm.response.json();",
+                  "const id = body?.data?.user?.id || '';",
+                  "if (id) pm.collectionVariables.set('targetUserId', id);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{userEmail}}\",\n  \"password\": \"{{userPassword}}\"\n}"
+            },
+            "url": "{{baseUrl}}/api/auth/login"
+          }
+        },
+        {
+          "name": "Session",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/auth/session"
+          }
+        },
+        {
+          "name": "Current user",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/auth/user"
+          }
+        },
+        {
+          "name": "Change password",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"current_password\": \"{{userPassword}}\",\n  \"new_password\": \"{{userNewPassword}}\"\n}"
+            },
+            "url": "{{baseUrl}}/api/auth/change-password"
+          }
+        },
+        {
+          "name": "Send OTP",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{userEmail}}\",\n  \"shouldCreateUser\": false\n}"
+            },
+            "url": "{{baseUrl}}/api/auth/send-otp"
+          }
+        },
+        {
+          "name": "Verify OTP",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{userEmail}}\",\n  \"token\": \"{{otpToken}}\"\n}"
+            },
+            "url": "{{baseUrl}}/api/auth/verify-otp"
+          }
+        },
+        {
+          "name": "Forgot password request",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const body = pm.response.json() || {};",
+                  "const code = body?.data?.preview?.confirmationCode || '';",
+                  "if (code) pm.collectionVariables.set('resetCode', code);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{userEmail}}\"\n}"
+            },
+            "url": "{{baseUrl}}/api/auth/forgot-password/request"
+          }
+        },
+        {
+          "name": "Forgot password verify code",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{userEmail}}\",\n  \"code\": \"{{resetCode}}\"\n}"
+            },
+            "url": "{{baseUrl}}/api/auth/forgot-password/verify"
+          }
+        },
+        {
+          "name": "Forgot password reset",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{userEmail}}\",\n  \"code\": \"{{resetCode}}\",\n  \"password\": \"{{userPassword}}\"\n}"
+            },
+            "url": "{{baseUrl}}/api/auth/forgot-password/reset"
+          }
+        },
+        {
+          "name": "Logout user",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/api/auth/logout"
+          }
+        }
+      ]
+    },
+    {
+      "name": "2 - Reviews flow",
+      "item": [
+        {
+          "name": "Get approved reviews by product (public)",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/reviews/by-product/{{productId}}"
+          }
+        },
+        {
+          "name": "Login user",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{userEmail}}\",\n  \"password\": \"{{userPassword}}\"\n}"
+            },
+            "url": "{{baseUrl}}/api/auth/login"
+          }
+        },
+        {
+          "name": "Submit review (pending)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('submit ok', function () { pm.response.to.have.status(200); });",
+                  "const id = pm.response.json()?.data?.id || '';",
+                  "if (id) pm.collectionVariables.set('reviewId', id);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"product_id\": \"{{productId}}\",\n  \"full_name\": \"User Postman\",\n  \"phone\": \"0909000000\",\n  \"rating\": 5,\n  \"comment\": \"San pham test bang Postman\",\n  \"image_url\": \"\"\n}"
+            },
+            "url": "{{baseUrl}}/api/reviews/submit"
+          }
+        },
+        {
+          "name": "Logout user",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/api/auth/logout"
+          }
+        }
+      ]
+    },
+    {
+      "name": "3 - Admin flow",
+      "item": [
+        {
+          "name": "Login admin",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{adminEmail}}\",\n  \"password\": \"{{adminPassword}}\"\n}"
+            },
+            "url": "{{baseUrl}}/api/auth/login"
+          }
+        },
+        {
+          "name": "Create account (admin only)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const body = pm.response.json() || {};",
+                  "const id = body?.data?.account?.id || '';",
+                  "if (id) pm.collectionVariables.set('targetUserId', id);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{tempAccountEmail}}\",\n  \"full_name\": \"Staff Postman\",\n  \"phone\": \"0909001111\",\n  \"address\": \"HCM\",\n  \"role\": \"staff\"\n}"
+            },
+            "url": "{{baseUrl}}/api/auth/admin/create-account"
+          }
+        },
+        {
+          "name": "Create promotion",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('promotion create ok', function () { pm.response.to.have.status(200); });",
+                  "const data = pm.response.json()?.data || {};",
+                  "if (data.id) pm.collectionVariables.set('promotionId', data.id);",
+                  "if (data.code) pm.collectionVariables.set('promotionCode', data.code);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"code\": \"{{promotionCode}}\",\n  \"name\": \"Promotion Postman 10%\",\n  \"discount_percent\": 10,\n  \"min_order\": 500000,\n  \"max_uses_per_user\": 1,\n  \"starts_at\": \"2026-04-10 00:00:00\",\n  \"ends_at\": \"2026-12-31 23:59:59\",\n  \"is_active\": true\n}"
+            },
+            "url": "{{baseUrl}}/api/promotions/create"
+          }
+        },
+        {
+          "name": "Assign promotion (specific user)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"promotion_id\": \"{{promotionId}}\",\n  \"mode\": \"specific_user\",\n  \"target_user_id\": \"{{targetUserId}}\"\n}"
+            },
+            "url": "{{baseUrl}}/api/promotions/assign"
+          }
+        },
+        {
+          "name": "Get promotion assignments",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const rows = pm.response.json()?.data || [];",
+                  "if (Array.isArray(rows) && rows.length > 0) { pm.collectionVariables.set('promotionAssignmentId', rows[0].id || ''); }"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/promotions/assignments/{{promotionId}}"
+          }
+        },
+        {
+          "name": "Moderate review (approve)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"review_id\": \"{{reviewId}}\",\n  \"status\": \"approved\"\n}"
+            },
+            "url": "{{baseUrl}}/api/reviews/moderate"
+          }
+        },
+        {
+          "name": "Logout admin",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/api/auth/logout"
+          }
+        }
+      ]
+    },
+    {
+      "name": "4 - Promotion user checkout preview",
+      "item": [
+        {
+          "name": "Login user",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{userEmail}}\",\n  \"password\": \"{{userPassword}}\"\n}"
+            },
+            "url": "{{baseUrl}}/api/auth/login"
+          }
+        },
+        {
+          "name": "My available promotions",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/promotions/my-available?order_subtotal={{orderSubtotal}}"
+          }
+        },
+        {
+          "name": "Apply preview by code",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"code\": \"{{promotionCode}}\",\n  \"order_subtotal\": {{orderSubtotal}}\n}"
+            },
+            "url": "{{baseUrl}}/api/promotions/apply-preview"
+          }
+        },
+        {
+          "name": "Logout user",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/api/auth/logout"
+          }
+        }
+      ]
+    },
+    {
+      "name": "5 - DB API (require session)",
+      "item": [
+        {
+          "name": "Login admin",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{adminEmail}}\",\n  \"password\": \"{{adminPassword}}\"\n}"
+            },
+            "url": "{{baseUrl}}/api/auth/login"
+          }
+        },
+        {
+          "name": "DB insert home section",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"table\": \"home_category_sections\",\n  \"values\": {\n    \"title\": \"Section Postman Full\",\n    \"product_group\": \"badminton\",\n    \"categories_json\": \"[]\",\n    \"sort_order\": 999,\n    \"is_active\": 1\n  },\n  \"select\": \"*\"\n}"
+            },
+            "url": "{{baseUrl}}/api/db/insert"
+          }
+        },
+        {
+          "name": "DB update home section",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"table\": \"home_category_sections\",\n  \"values\": {\n    \"title\": \"Section Postman Full Updated\"\n  },\n  \"filters\": [\n    { \"column\": \"title\", \"op\": \"eq\", \"value\": \"Section Postman Full\" }\n  ],\n  \"select\": \"*\"\n}"
+            },
+            "url": "{{baseUrl}}/api/db/update"
+          }
+        },
+        {
+          "name": "DB delete home section",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"table\": \"home_category_sections\",\n  \"filters\": [\n    { \"column\": \"title\", \"op\": \"eq\", \"value\": \"Section Postman Full Updated\" }\n  ]\n}"
+            },
+            "url": "{{baseUrl}}/api/db/delete"
+          }
+        },
+        {
+          "name": "Logout admin",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/api/auth/logout"
+          }
+        }
+      ]
+    },
+    {
+      "name": "6 - RPC checkout atomic (require user session)",
+      "item": [
+        {
+          "name": "Login user",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{userEmail}}\",\n  \"password\": \"{{userPassword}}\"\n}"
+            },
+            "url": "{{baseUrl}}/api/auth/login"
+          }
+        },
+        {
+          "name": "RPC create_checkout_order_atomic",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"fn\": \"create_checkout_order_atomic\",\n  \"args\": {\n    \"p_user_id\": \"{{targetUserId}}\",\n    \"p_total\": 10000,\n    \"p_subtotal\": 10000,\n    \"p_promotion_assignment_id\": null,\n    \"p_shipping_address\": \"Test User - 0909000000 - Dia chi test (COD)\",\n    \"p_status\": \"pending\",\n    \"p_items\": [\n      {\n        \"product_id\": \"{{productId}}\",\n        \"quantity\": 1,\n        \"price\": 10000,\n        \"shoe_size\": null\n      }\n    ]\n  }\n}"
+            },
+            "url": "{{baseUrl}}/api/db/rpc"
+          }
+        },
+        {
+          "name": "Logout user",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/api/auth/logout"
+          }
+        }
+      ]
+    }
+  ]
+}

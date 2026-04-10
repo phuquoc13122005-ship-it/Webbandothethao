@@ -1,0 +1,14 @@
+$kind: http-request
+url: "{{baseUrl}}/api/promotions/assign"
+method: POST
+headers:
+  Content-Type: application/json
+body:
+  type: text
+  content: |-
+    {
+      "promotion_id": "{{promotionId}}",
+      "mode": "specific_user",
+      "target_user_id": "{{targetUserId}}"
+    }
+order: 2000

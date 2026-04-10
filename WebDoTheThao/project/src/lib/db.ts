@@ -353,13 +353,21 @@ const mysqlApiClient = {
       });
       return { error: result.error, data: result.data };
     },
-    async adminCreateAccount({ fullName, phone, address, email, role }: any) {
+    async adminCreateAccount({ fullName, phone, address, email, password, role }: any) {
       const result = await callApi('/api/auth/admin/create-account', 'POST', {
         full_name: fullName,
         phone,
         address,
         email,
+        password,
         role,
+      });
+      return { error: result.error, data: result.data };
+    },
+    async adminResetAccountPassword({ targetUserId, newPassword }: any) {
+      const result = await callApi('/api/auth/admin/reset-account-password', 'POST', {
+        target_user_id: targetUserId,
+        new_password: newPassword,
       });
       return { error: result.error, data: result.data };
     },

@@ -1,0 +1,20 @@
+$kind: http-request
+url: "{{baseUrl}}/api/db/insert"
+method: POST
+headers:
+  Content-Type: application/json
+body:
+  type: text
+  content: |-
+    {
+      "table": "home_category_sections",
+      "values": {
+        "title": "Section Admin Collection",
+        "product_group": "badminton",
+        "categories_json": "[]",
+        "sort_order": 998,
+        "is_active": 1
+      },
+      "select": "*"
+    }
+order: 2000

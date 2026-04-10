@@ -1,0 +1,267 @@
+{
+  "info": {
+    "name": "WebDoTheThao ADMIN API Tests",
+    "_postman_id": "1206f393-d3db-40e9-84ca-6a3a6b8f76f8",
+    "description": "Collection test API cho luong Admin.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "baseUrl", "value": "http://localhost:4000" },
+    { "key": "adminEmail", "value": "admin@nikashop.com" },
+    { "key": "adminPassword", "value": "123456" },
+    { "key": "userEmail", "value": "user.postman@example.com" },
+    { "key": "targetUserId", "value": "" },
+    { "key": "promotionCode", "value": "KMPOSTMAN10" },
+    { "key": "promotionId", "value": "" },
+    { "key": "promotionAssignmentId", "value": "" },
+    { "key": "reviewId", "value": "" },
+    { "key": "tempAccountEmail", "value": "staff.postman@example.com" },
+    { "key": "productId", "value": "" }
+  ],
+  "item": [
+    {
+      "name": "0. Admin login",
+      "item": [
+        {
+          "name": "Login admin",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{adminEmail}}\",\n  \"password\": \"{{adminPassword}}\"\n}"
+            },
+            "url": "{{baseUrl}}/api/auth/login"
+          }
+        },
+        {
+          "name": "Session",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/auth/session"
+          }
+        }
+      ]
+    },
+    {
+      "name": "1. Bootstrap admin variables",
+      "item": [
+        {
+          "name": "Query user by email (set targetUserId)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const rows = pm.response.json()?.data || [];",
+                  "if (Array.isArray(rows) && rows.length > 0) pm.collectionVariables.set('targetUserId', rows[0].id || '');"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"table\": \"users\",\n  \"select\": \"id,email\",\n  \"filters\": [\n    { \"column\": \"email\", \"op\": \"eq\", \"value\": \"{{userEmail}}\" }\n  ],\n  \"limit\": 1\n}"
+            },
+            "url": "{{baseUrl}}/api/db/query"
+          }
+        },
+        {
+          "name": "Query products (set productId)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const rows = pm.response.json()?.data || [];",
+                  "if (Array.isArray(rows) && rows.length > 0) pm.collectionVariables.set('productId', rows[0].id || '');"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"table\": \"products\",\n  \"select\": \"*\",\n  \"order\": { \"column\": \"created_at\", \"ascending\": false },\n  \"limit\": 10\n}"
+            },
+            "url": "{{baseUrl}}/api/db/query"
+          }
+        },
+        {
+          "name": "Query pending reviews (set reviewId if exists)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const rows = pm.response.json()?.data || [];",
+                  "if (Array.isArray(rows) && rows.length > 0) pm.collectionVariables.set('reviewId', rows[0].id || '');"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"table\": \"reviews\",\n  \"select\": \"*\",\n  \"filters\": [\n    { \"column\": \"status\", \"op\": \"eq\", \"value\": \"pending\" }\n  ],\n  \"order\": { \"column\": \"created_at\", \"ascending\": false },\n  \"limit\": 5\n}"
+            },
+            "url": "{{baseUrl}}/api/db/query"
+          }
+        }
+      ]
+    },
+    {
+      "name": "2. Promotions admin",
+      "item": [
+        {
+          "name": "Create promotion",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const data = pm.response.json()?.data || {};",
+                  "if (data.id) pm.collectionVariables.set('promotionId', data.id);",
+                  "if (data.code) pm.collectionVariables.set('promotionCode', data.code);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"code\": \"{{promotionCode}}\",\n  \"name\": \"Promotion tu collection admin\",\n  \"discount_percent\": 10,\n  \"min_order\": 500000,\n  \"max_uses_per_user\": 1,\n  \"starts_at\": \"2026-04-10 00:00:00\",\n  \"ends_at\": \"2026-12-31 23:59:59\",\n  \"is_active\": true\n}"
+            },
+            "url": "{{baseUrl}}/api/promotions/create"
+          }
+        },
+        {
+          "name": "Assign promotion specific_user",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"promotion_id\": \"{{promotionId}}\",\n  \"mode\": \"specific_user\",\n  \"target_user_id\": \"{{targetUserId}}\"\n}"
+            },
+            "url": "{{baseUrl}}/api/promotions/assign"
+          }
+        },
+        {
+          "name": "Get promotion assignments",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const rows = pm.response.json()?.data || [];",
+                  "if (Array.isArray(rows) && rows.length > 0) pm.collectionVariables.set('promotionAssignmentId', rows[0].id || '');"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/promotions/assignments/{{promotionId}}"
+          }
+        }
+      ]
+    },
+    {
+      "name": "3. Reviews admin",
+      "item": [
+        {
+          "name": "Moderate review approved",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"review_id\": \"{{reviewId}}\",\n  \"status\": \"approved\"\n}"
+            },
+            "url": "{{baseUrl}}/api/reviews/moderate"
+          }
+        }
+      ]
+    },
+    {
+      "name": "4. Accounts + DB CRUD",
+      "item": [
+        {
+          "name": "Create account (admin only)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{tempAccountEmail}}\",\n  \"full_name\": \"Staff tu collection admin\",\n  \"phone\": \"0909001111\",\n  \"address\": \"HCM\",\n  \"role\": \"staff\"\n}"
+            },
+            "url": "{{baseUrl}}/api/auth/admin/create-account"
+          }
+        },
+        {
+          "name": "DB insert home section",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"table\": \"home_category_sections\",\n  \"values\": {\n    \"title\": \"Section Admin Collection\",\n    \"product_group\": \"badminton\",\n    \"categories_json\": \"[]\",\n    \"sort_order\": 998,\n    \"is_active\": 1\n  },\n  \"select\": \"*\"\n}"
+            },
+            "url": "{{baseUrl}}/api/db/insert"
+          }
+        },
+        {
+          "name": "DB update home section",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"table\": \"home_category_sections\",\n  \"values\": {\n    \"title\": \"Section Admin Collection Updated\"\n  },\n  \"filters\": [\n    { \"column\": \"title\", \"op\": \"eq\", \"value\": \"Section Admin Collection\" }\n  ],\n  \"select\": \"*\"\n}"
+            },
+            "url": "{{baseUrl}}/api/db/update"
+          }
+        },
+        {
+          "name": "DB delete home section",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"table\": \"home_category_sections\",\n  \"filters\": [\n    { \"column\": \"title\", \"op\": \"eq\", \"value\": \"Section Admin Collection Updated\" }\n  ]\n}"
+            },
+            "url": "{{baseUrl}}/api/db/delete"
+          }
+        }
+      ]
+    },
+    {
+      "name": "5. Logout admin",
+      "item": [
+        {
+          "name": "Logout",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/api/auth/logout"
+          }
+        }
+      ]
+    }
+  ]
+}

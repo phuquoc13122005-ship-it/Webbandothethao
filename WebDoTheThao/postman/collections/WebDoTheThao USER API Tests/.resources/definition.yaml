@@ -1,0 +1,13 @@
+$kind: collection
+description: Collection test API cho luong User.
+variables:
+  baseUrl: http://localhost:4000
+  userEmail: user.postman@example.com
+  userPassword: "123456"
+  userNewPassword: "12345678"
+  productId: ""
+  promotionCode: KMPOSTMAN10
+  orderSubtotal: "1200000"
+  reviewId: ""
+  resetCode: ""
+  otpToken: "000000"

@@ -1,0 +1,26 @@
+$kind: http-request
+url: "{{baseUrl}}/api/promotions/create"
+method: POST
+headers:
+  Content-Type: application/json
+body:
+  type: text
+  content: |-
+    {
+      "code": "{{promotionCode}}",
+      "name": "Promotion tu collection admin",
+      "discount_percent": 10,
+      "min_order": 500000,
+      "max_uses_per_user": 1,
+      "starts_at": "2026-04-10 00:00:00",
+      "ends_at": "2026-12-31 23:59:59",
+      "is_active": true
+    }
+scripts:
+  - type: afterResponse
+    code: |-
+      const data = pm.response.json()?.data || {};
+      if (data.id) pm.collectionVariables.set('promotionId', data.id);
+      if (data.code) pm.collectionVariables.set('promotionCode', data.code);
+    language: text/javascript
+order: 1000

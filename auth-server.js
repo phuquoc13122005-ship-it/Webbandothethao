@@ -685,12 +685,16 @@ app.post('/api/auth/admin/create-account', requireSession, async (req, res) => {
     const phone = String(req.body?.phone || '').trim();
     const address = String(req.body?.address || '').trim();
     const role = String(req.body?.role || 'customer').trim().toLowerCase();
+    const providedPassword = String(req.body?.password || '');
 
     if (!email || !email.includes('@')) {
       return res.status(400).json({ error: { message: 'EMAIL_INVALID' } });
     }
     if (!['customer', 'staff'].includes(role)) {
       return res.status(400).json({ error: { message: 'ROLE_INVALID' } });
+    }
+    if (providedPassword && providedPassword.length < 6) {
+      return res.status(400).json({ error: { message: 'INVALID_PASSWORD' } });
     }
 
     const existing = await runQuery('select id from users where email = ? limit 1', [email]);
@@ -699,8 +703,8 @@ app.post('/api/auth/admin/create-account', requireSession, async (req, res) => {
     }
 
     const id = randomUUID();
-    const temporaryPassword = generateTemporaryPassword(10);
-    const passwordHash = await bcrypt.hash(temporaryPassword, 10);
+    const passwordForAccount = providedPassword || generateTemporaryPassword(10);
+    const passwordHash = await bcrypt.hash(passwordForAccount, 10);
     const createdAtIso = new Date().toISOString();
 
     await runQuery(
@@ -724,7 +728,7 @@ app.post('/api/auth/admin/create-account', requireSession, async (req, res) => {
           provider: 'local',
           created_at: createdAtIso,
         },
-        temporary_password: temporaryPassword,
+        temporary_password: providedPassword ? null : passwordForAccount,
       },
       error: null,
     });
@@ -1349,6 +1353,39 @@ app.post('/api/auth/change-password', requireSession, async (req, res) => {
 
     const passwordHash = await bcrypt.hash(newPassword, 10);
     await runQuery('update users set password_hash = ? where id = ?', [passwordHash, user.id]);
+    return res.json({ data: { updated: true }, error: null });
+  } catch (error) {
+    return res.status(500).json({ error: { message: error.message } });
+  }
+});
+
+app.post('/api/auth/admin/reset-account-password', requireSession, async (req, res) => {
+  try {
+    const actorId = String(req.session.user?.id || '').trim();
+    if (!actorId) {
+      return res.status(401).json({ error: { message: 'UNAUTHENTICATED' } });
+    }
+    const actorRole = await getRoleByUserId(actorId);
+    if (actorRole !== 'admin') {
+      return res.status(403).json({ error: { message: 'FORBIDDEN' } });
+    }
+
+    const targetUserId = String(req.body?.target_user_id || '').trim();
+    const newPassword = String(req.body?.new_password || '');
+    if (!targetUserId) {
+      return res.status(400).json({ error: { message: 'TARGET_USER_REQUIRED' } });
+    }
+    if (!newPassword || newPassword.length < 6) {
+      return res.status(400).json({ error: { message: 'INVALID_PASSWORD' } });
+    }
+
+    const rows = await runQuery('select id from users where id = ? limit 1', [targetUserId]);
+    if (!rows.length) {
+      return res.status(404).json({ error: { message: 'USER_NOT_FOUND' } });
+    }
+
+    const passwordHash = await bcrypt.hash(newPassword, 10);
+    await runQuery('update users set password_hash = ? where id = ?', [passwordHash, targetUserId]);
     return res.json({ data: { updated: true }, error: null });
   } catch (error) {
     return res.status(500).json({ error: { message: error.message } });

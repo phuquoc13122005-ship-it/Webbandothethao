@@ -1,0 +1,23 @@
+$kind: http-request
+url: "{{baseUrl}}/api/reviews/submit"
+method: POST
+headers:
+  Content-Type: application/json
+body:
+  type: text
+  content: |-
+    {
+      "product_id": "{{productId}}",
+      "full_name": "User Postman",
+      "phone": "0909000000",
+      "rating": 5,
+      "comment": "Review tu collection user",
+      "image_url": ""
+    }
+scripts:
+  - type: afterResponse
+    code: |-
+      const id = pm.response.json()?.data?.id || '';
+      if (id) pm.collectionVariables.set('reviewId', id);
+    language: text/javascript
+order: 4000
