@@ -1,0 +1,35 @@
+$kind: http-request
+name: Create checkout order (user)
+url: "{{baseUrl}}/api/db/rpc"
+method: POST
+headers:
+  Content-Type: application/json
+body:
+  type: text
+  content: |-
+    {
+      "fn": "create_checkout_order_atomic",
+      "args": {
+        "p_user_id": "fa2eeb96-e6f5-4c87-a86f-22602a1bbdf5",
+        "p_subtotal": 3600000,
+        "p_total": 3600000,
+        "p_shipping_address": "HCM - COD - Test",
+        "p_status": "pending",
+        "p_items": [
+          {
+            "product_id": "{{productId}}",
+            "quantity": {{orderQuantity}},
+            "price": {{productPrice}},
+            "shoe_size": null
+          }
+        ]
+      }
+    }
+scripts:
+  - type: afterResponse
+    code: |-
+      pm.test('status 200', function () { pm.response.to.have.status(200); });
+      const orderId = pm.response.json()?.data || '';
+      if (orderId) pm.collectionVariables.set('orderId', orderId);
+    language: text/javascript
+order: 1000

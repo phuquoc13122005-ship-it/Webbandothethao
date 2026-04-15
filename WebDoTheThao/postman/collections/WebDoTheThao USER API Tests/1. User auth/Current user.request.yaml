@@ -1,4 +1,12 @@
 $kind: http-request
 url: "{{baseUrl}}/api/auth/user"
 method: GET
-order: 4000
+headers:
+  Authorization: Bearer {{accessToken}}
+scripts:
+  - type: afterResponse
+    code: |-
+      const user = pm.response.json()?.data?.user || {};
+      if (user?.id) pm.collectionVariables.set('userId', user.id);
+    language: text/javascript
+order: 5000

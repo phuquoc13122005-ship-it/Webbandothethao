@@ -1,0 +1,21 @@
+$kind: http-request
+name: Cancel my order (set status=cancelled)
+url: "{{baseUrl}}/api/db/update"
+method: POST
+headers:
+  Content-Type: application/json
+body:
+  type: text
+  content: >-
+    {
+      "table": "orders",
+      "values": {
+        "status": "cancelled"
+      },
+      "filters": [
+        { "column": "id", "op": "eq", "value": "4138a4d5-973b-4a01-b98b-8110546eeb67" },
+        { "column": "user_id", "op": "eq", "value": "fa2eeb96-e6f5-4c87-a86f-22602a1bbdf5" }
+      ],
+      "select": "*"
+    }
+order: 2000

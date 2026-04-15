@@ -5,9 +5,17 @@ variables:
   userEmail: user.postman@example.com
   userPassword: "123456"
   userNewPassword: "12345678"
+  accessToken: ""
+  userId: ""
   productId: ""
+  productPrice: "0"
+  searchKeyword: vot
   promotionCode: KMPOSTMAN10
   orderSubtotal: "1200000"
+  orderQuantity: "1"
+  shippingAddress: TPHCM - COD - Postman test
+  orderId: ""
+  cartItemId: ""
   reviewId: ""
   resetCode: ""
   otpToken: "000000"

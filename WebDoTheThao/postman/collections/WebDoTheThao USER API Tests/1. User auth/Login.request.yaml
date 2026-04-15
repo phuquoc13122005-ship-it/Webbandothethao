@@ -1,4 +1,5 @@
 $kind: http-request
+name: Login
 url: "{{baseUrl}}/api/auth/login"
 method: POST
 headers:
@@ -7,7 +8,16 @@ body:
   type: text
   content: |-
     {
-      "email": "{{userEmail}}",
-      "password": "{{userPassword}}"
+      "email": "doanminhhieu192005@gmail.com",
+      "password": "Quoc18cm"
     }
+scripts:
+  - type: afterResponse
+    code: |-
+      const body = pm.response.json() || {};
+      const token = body?.data?.access_token || '';
+      if (token) pm.collectionVariables.set('accessToken', token);
+      const userId = body?.data?.user?.id || '';
+      if (userId) pm.collectionVariables.set('userId', userId);
+    language: text/javascript
 order: 2000

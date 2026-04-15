@@ -10,4 +10,4 @@ body:
       "email": "{{userEmail}}",
       "shouldCreateUser": false
     }
-order: 6000
+order: 8000

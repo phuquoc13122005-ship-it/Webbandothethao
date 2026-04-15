@@ -1,0 +1,25 @@
+$kind: http-request
+name: Update cart item quantity
+url: "{{baseUrl}}/api/db/update"
+method: POST
+headers:
+  Content-Type: application/json
+body:
+  type: text
+  content: >-
+    {
+      "table": "cart_items",
+      "values": {
+        "quantity": 2
+      },
+      "filters": [
+        { "column": "id", "op": "eq", "value": ""023541c7-29fb-4ba7-bbc6-f3a7d8da605e" },
+        { "column": "user_id", "op": "eq", "value": "fa2eeb96-e6f5-4c87-a86f-22602a1bbdf5" }
+      ],
+      "select": "*"
+    }
+auth:
+  type: bearer
+  credentials:
+    token: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJmYTJlZWI5Ni1lNmY1LTRjODctYTg2Zi0yMjYwMmExYmJkZjUiLCJ0eXBlIjo
+order: 3000

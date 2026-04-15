@@ -1,0 +1,32 @@
+$kind: http-request
+url: "{{baseUrl}}/api/db/query"
+method: POST
+headers:
+  Content-Type: application/json
+body:
+  type: text
+  content: |-
+    {
+      "table": "products",
+      "select": "id,name,slug,price,image_url,stock,created_at",
+      "filters": [
+        { "column": "name", "op": "ilike", "value": "{{searchKeyword}}" }
+      ],
+      "order": { "column": "created_at", "ascending": false },
+      "limit": 10
+    }
+scripts:
+  - type: afterResponse
+    code: >-
+      pm.test('status 200', function () { pm.response.to.have.status(200); });
+
+      const rows = pm.response.json()?.data || [];
+
+      pm.test('response is array', function () {
+      pm.expect(Array.isArray(rows)).to.eql(true); });
+
+      if (Array.isArray(rows) && rows.length > 0)
+      pm.collectionVariables.set('productId', rows[0].id ||
+      pm.collectionVariables.get('productId') || '');
+    language: text/javascript
+order: 2000

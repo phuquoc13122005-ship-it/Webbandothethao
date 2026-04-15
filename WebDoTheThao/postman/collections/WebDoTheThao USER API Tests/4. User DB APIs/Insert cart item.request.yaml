@@ -1,0 +1,27 @@
+$kind: http-request
+url: "{{baseUrl}}/api/db/insert"
+method: POST
+headers:
+  Content-Type: application/json
+body:
+  type: text
+  content: |-
+    {
+      "table": "cart_items",
+      "values": {
+        "user_id": "{{userId}}",
+        "product_id": "{{productId}}",
+        "quantity": 1,
+        "shoe_size": null
+      },
+      "select": "*"
+    }
+scripts:
+  - type: afterResponse
+    code: >-
+      const rows = pm.response.json()?.data || [];
+
+      if (Array.isArray(rows) && rows.length > 0)
+      pm.collectionVariables.set('cartItemId', rows[0].id || '');
+    language: text/javascript
+order: 2000

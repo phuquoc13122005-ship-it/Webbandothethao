@@ -10,4 +10,11 @@ body:
       "email": "{{adminEmail}}",
       "password": "{{adminPassword}}"
     }
+scripts:
+  - type: afterResponse
+    code: |-
+      const body = pm.response.json() || {};
+      const token = body?.data?.access_token || '';
+      if (token) pm.collectionVariables.set('accessToken', token);
+    language: text/javascript
 order: 1000

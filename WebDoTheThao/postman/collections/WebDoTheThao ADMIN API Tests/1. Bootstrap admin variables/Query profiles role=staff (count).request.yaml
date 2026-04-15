@@ -1,0 +1,23 @@
+$kind: http-request
+url: "{{baseUrl}}/api/db/query"
+method: POST
+headers:
+  Content-Type: application/json
+body:
+  type: text
+  content: |-
+    {
+      "table": "profiles",
+      "select": "id,role",
+      "filters": [
+        { "column": "role", "op": "eq", "value": "staff" }
+      ],
+      "limit": 10000
+    }
+scripts:
+  - type: afterResponse
+    code: |-
+      const rows = pm.response.json()?.data || [];
+      console.log('Total staff:', Array.isArray(rows) ? rows.length : 0);
+    language: text/javascript
+order: 6000

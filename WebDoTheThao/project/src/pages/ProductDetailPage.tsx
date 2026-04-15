@@ -137,6 +137,18 @@ export default function ProductDetailPage() {
     () => parseImageGallery(product?.image_gallery, product?.image_url),
     [product?.image_gallery, product?.image_url],
   );
+  const branchLocations = useMemo(() => {
+    const raw = String(product?.branch_name || '').trim();
+    if (!raw) return [];
+    return Array.from(
+      new Set(
+        raw
+          .split(/[;,]/)
+          .map(item => item.trim())
+          .filter(Boolean),
+      ),
+    );
+  }, [product?.branch_name]);
   const reviewStats = useMemo(() => {
     const distribution = [1, 2, 3, 4, 5].reduce((acc, star) => ({ ...acc, [star]: 0 }), {} as Record<number, number>);
     approvedReviews.forEach(item => {
@@ -574,7 +586,9 @@ export default function ProductDetailPage() {
 
           <div className="rounded-xl border border-slate-200 p-4">
             <p className="font-semibold text-slate-900 mb-2 inline-flex items-center gap-2"><Store className="w-4 h-4 text-teal-600" /> Đang có hàng tại</p>
-            <p className="text-sm text-slate-600">TPHCM, Hà Nội, Đà Nẵng, Bình Dương, Đồng Nai...</p>
+            <p className="text-sm text-slate-600">
+              {branchLocations.length > 0 ? branchLocations.join(', ') : 'Chưa cập nhật chi nhánh'}
+            </p>
           </div>
         </div>
       </div>

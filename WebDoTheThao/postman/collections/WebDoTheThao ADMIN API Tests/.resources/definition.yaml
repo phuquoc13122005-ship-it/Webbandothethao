@@ -1,10 +1,11 @@
 $kind: collection
-name: WebDoTheThao ADMIN API Tests
 description: Collection test API cho luong Admin.
 variables:
   baseUrl: http://localhost:4000
   adminEmail: admin@nikashop.com
   adminPassword: "123456"
+  accessToken: ""
+  adminNewPassword: "12345678"
   userEmail: user.postman@example.com
   targetUserId: ""
   promotionCode: KMPOSTMAN10
@@ -12,4 +13,5 @@ variables:
   promotionAssignmentId: ""
   reviewId: ""
   tempAccountEmail: staff.postman@example.com
+  tempAccountPassword: "123456"
   productId: ""

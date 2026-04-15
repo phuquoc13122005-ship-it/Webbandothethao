@@ -100,6 +100,15 @@ function parseProductSizeValues(sizeOptions?: string | null) {
     .filter((value, index, arr) => arr.indexOf(value) === index);
 }
 
+function parseProductBranchValues(branchValue?: string | null) {
+  if (!branchValue) return [];
+  return String(branchValue)
+    .split(/[;,]/)
+    .map(item => item.trim())
+    .filter(Boolean)
+    .filter((value, index, arr) => arr.indexOf(value) === index);
+}
+
 function isPriceInRange(price: number, rangeValue: string) {
   const option = PRICE_FILTER_OPTIONS.find(item => item.value === rangeValue);
   if (!option) return false;
@@ -305,7 +314,8 @@ export default function ProductsPage() {
     if (selectedBranches.length > 0 && hasBranchDataInProducts) {
       arr = arr.filter(product => {
         const rawBranch = String((product as any).branch_name || (product as any).branch || '').trim();
-        return selectedBranches.includes(rawBranch);
+        const branchValues = parseProductBranchValues(rawBranch);
+        return selectedBranches.some(selectedBranch => branchValues.includes(selectedBranch));
       });
     }
 

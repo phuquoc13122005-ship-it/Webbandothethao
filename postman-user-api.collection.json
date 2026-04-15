@@ -10,9 +10,17 @@
     { "key": "userEmail", "value": "user.postman@example.com" },
     { "key": "userPassword", "value": "123456" },
     { "key": "userNewPassword", "value": "12345678" },
+    { "key": "accessToken", "value": "" },
+    { "key": "userId", "value": "" },
     { "key": "productId", "value": "" },
+    { "key": "productPrice", "value": "0" },
+    { "key": "searchKeyword", "value": "vot" },
     { "key": "promotionCode", "value": "KMPOSTMAN10" },
     { "key": "orderSubtotal", "value": "1200000" },
+    { "key": "orderQuantity", "value": "1" },
+    { "key": "shippingAddress", "value": "TPHCM - COD - Postman test" },
+    { "key": "orderId", "value": "" },
+    { "key": "cartItemId", "value": "" },
     { "key": "reviewId", "value": "" },
     { "key": "resetCode", "value": "" },
     { "key": "otpToken", "value": "000000" }
@@ -31,7 +39,10 @@
                 "exec": [
                   "pm.test('status 200', function () { pm.response.to.have.status(200); });",
                   "const rows = pm.response.json()?.data || [];",
-                  "if (Array.isArray(rows) && rows.length > 0) pm.collectionVariables.set('productId', rows[0].id || '');"
+                  "if (Array.isArray(rows) && rows.length > 0) {",
+                  "  pm.collectionVariables.set('productId', rows[0].id || '');",
+                  "  pm.collectionVariables.set('productPrice', String(rows[0].price || 0));",
+                  "}"
                 ]
               }
             }
@@ -42,6 +53,32 @@
             "body": {
               "mode": "raw",
               "raw": "{\n  \"table\": \"products\",\n  \"select\": \"*\",\n  \"order\": { \"column\": \"created_at\", \"ascending\": false },\n  \"limit\": 10\n}"
+            },
+            "url": "{{baseUrl}}/api/db/query"
+          }
+        },
+        {
+          "name": "Search products by name (public)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 200', function () { pm.response.to.have.status(200); });",
+                  "const rows = pm.response.json()?.data || [];",
+                  "pm.test('response is array', function () { pm.expect(Array.isArray(rows)).to.eql(true); });",
+                  "if (Array.isArray(rows) && rows.length > 0) pm.collectionVariables.set('productId', rows[0].id || pm.collectionVariables.get('productId') || '');"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"table\": \"products\",\n  \"select\": \"id,name,slug,price,image_url,stock,created_at\",\n  \"filters\": [\n    { \"column\": \"name\", \"op\": \"ilike\", \"value\": \"{{searchKeyword}}\" }\n  ],\n  \"order\": { \"column\": \"created_at\", \"ascending\": false },\n  \"limit\": 10\n}"
             },
             "url": "{{baseUrl}}/api/db/query"
           }
@@ -65,6 +102,21 @@
         },
         {
           "name": "Login",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const body = pm.response.json() || {};",
+                  "const token = body?.data?.access_token || '';",
+                  "if (token) pm.collectionVariables.set('accessToken', token);",
+                  "const userId = body?.data?.user?.id || '';",
+                  "if (userId) pm.collectionVariables.set('userId', userId);"
+                ]
+              }
+            }
+          ],
           "request": {
             "method": "POST",
             "header": [{ "key": "Content-Type", "value": "application/json" }],
@@ -76,6 +128,26 @@
           }
         },
         {
+          "name": "Refresh access token",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const body = pm.response.json() || {};",
+                  "const token = body?.data?.access_token || '';",
+                  "if (token) pm.collectionVariables.set('accessToken', token);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/api/auth/refresh-token"
+          }
+        },
+        {
           "name": "Session",
           "request": {
             "method": "GET",
@@ -84,8 +156,21 @@
         },
         {
           "name": "Current user",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const user = pm.response.json()?.data?.user || {};",
+                  "if (user?.id) pm.collectionVariables.set('userId', user.id);"
+                ]
+              }
+            }
+          ],
           "request": {
             "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{accessToken}}" }],
             "url": "{{baseUrl}}/api/auth/user"
           }
         },
@@ -99,6 +184,18 @@
               "raw": "{\n  \"current_password\": \"{{userPassword}}\",\n  \"new_password\": \"{{userNewPassword}}\"\n}"
             },
             "url": "{{baseUrl}}/api/auth/change-password"
+          }
+        },
+        {
+          "name": "Update password (legacy endpoint)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"password\": \"{{userPassword}}\"\n}"
+            },
+            "url": "{{baseUrl}}/api/auth/update-password"
           }
         },
         {
@@ -232,7 +329,138 @@
       ]
     },
     {
-      "name": "3. Logout",
+      "name": "3. Orders",
+      "item": [
+        {
+          "name": "Create checkout order (user)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 200', function () { pm.response.to.have.status(200); });",
+                  "const orderId = pm.response.json()?.data || '';",
+                  "if (orderId) pm.collectionVariables.set('orderId', orderId);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"fn\": \"create_checkout_order_atomic\",\n  \"args\": {\n    \"p_user_id\": \"{{userId}}\",\n    \"p_subtotal\": {{productPrice}},\n    \"p_total\": {{productPrice}},\n    \"p_shipping_address\": \"{{shippingAddress}}\",\n    \"p_status\": \"pending\",\n    \"p_items\": [\n      {\n        \"product_id\": \"{{productId}}\",\n        \"quantity\": {{orderQuantity}},\n        \"price\": {{productPrice}},\n        \"shoe_size\": null\n      }\n    ]\n  }\n}"
+            },
+            "url": "{{baseUrl}}/api/db/rpc"
+          }
+        },
+        {
+          "name": "Cancel my order (set status=cancelled)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"table\": \"orders\",\n  \"values\": {\n    \"status\": \"cancelled\"\n  },\n  \"filters\": [\n    { \"column\": \"id\", \"op\": \"eq\", \"value\": \"{{orderId}}\" },\n    { \"column\": \"user_id\", \"op\": \"eq\", \"value\": \"{{userId}}\" }\n  ],\n  \"select\": \"*\"\n}"
+            },
+            "url": "{{baseUrl}}/api/db/update"
+          }
+        },
+        {
+          "name": "Verify my order status (cancelled)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"table\": \"orders\",\n  \"select\": \"*\",\n  \"filters\": [\n    { \"column\": \"id\", \"op\": \"eq\", \"value\": \"{{orderId}}\" },\n    { \"column\": \"user_id\", \"op\": \"eq\", \"value\": \"{{userId}}\" }\n  ],\n  \"limit\": 1\n}"
+            },
+            "url": "{{baseUrl}}/api/db/query"
+          }
+        }
+      ]
+    },
+    {
+      "name": "4. User DB APIs",
+      "item": [
+        {
+          "name": "Query my cart items",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"table\": \"cart_items\",\n  \"select\": \"*, products(*)\",\n  \"filters\": [\n    { \"column\": \"user_id\", \"op\": \"eq\", \"value\": \"{{userId}}\" }\n  ],\n  \"order\": { \"column\": \"created_at\", \"ascending\": false },\n  \"limit\": 20\n}"
+            },
+            "url": "{{baseUrl}}/api/db/query"
+          }
+        },
+        {
+          "name": "Insert cart item",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const rows = pm.response.json()?.data || [];",
+                  "if (Array.isArray(rows) && rows.length > 0) pm.collectionVariables.set('cartItemId', rows[0].id || '');"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"table\": \"cart_items\",\n  \"values\": {\n    \"user_id\": \"{{userId}}\",\n    \"product_id\": \"{{productId}}\",\n    \"quantity\": 1,\n    \"shoe_size\": null\n  },\n  \"select\": \"*\"\n}"
+            },
+            "url": "{{baseUrl}}/api/db/insert"
+          }
+        },
+        {
+          "name": "Update cart item quantity",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"table\": \"cart_items\",\n  \"values\": {\n    \"quantity\": 2\n  },\n  \"filters\": [\n    { \"column\": \"id\", \"op\": \"eq\", \"value\": \"{{cartItemId}}\" },\n    { \"column\": \"user_id\", \"op\": \"eq\", \"value\": \"{{userId}}\" }\n  ],\n  \"select\": \"*\"\n}"
+            },
+            "url": "{{baseUrl}}/api/db/update"
+          }
+        },
+        {
+          "name": "Delete cart item",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"table\": \"cart_items\",\n  \"filters\": [\n    { \"column\": \"id\", \"op\": \"eq\", \"value\": \"{{cartItemId}}\" },\n    { \"column\": \"user_id\", \"op\": \"eq\", \"value\": \"{{userId}}\" }\n  ]\n}"
+            },
+            "url": "{{baseUrl}}/api/db/delete"
+          }
+        },
+        {
+          "name": "Query my orders with items",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"table\": \"orders\",\n  \"select\": \"*, order_items(*, products(*))\",\n  \"filters\": [\n    { \"column\": \"user_id\", \"op\": \"eq\", \"value\": \"{{userId}}\" }\n  ],\n  \"order\": { \"column\": \"created_at\", \"ascending\": false },\n  \"limit\": 20\n}"
+            },
+            "url": "{{baseUrl}}/api/db/query"
+          }
+        }
+      ]
+    },
+    {
+      "name": "5. Logout",
       "item": [
         {
           "name": "Logout user",

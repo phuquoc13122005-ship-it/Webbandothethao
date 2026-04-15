@@ -1,0 +1,18 @@
+$kind: http-request
+url: "{{baseUrl}}/api/db/query"
+method: POST
+headers:
+  Content-Type: application/json
+body:
+  type: text
+  content: |-
+    {
+      "table": "orders",
+      "select": "*, order_items(*, products(*))",
+      "filters": [
+        { "column": "user_id", "op": "eq", "value": "{{userId}}" }
+      ],
+      "order": { "column": "created_at", "ascending": false },
+      "limit": 20
+    }
+order: 5000

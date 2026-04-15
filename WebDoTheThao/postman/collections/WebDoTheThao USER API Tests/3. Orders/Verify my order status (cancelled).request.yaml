@@ -1,0 +1,23 @@
+$kind: http-request
+name: Verify my order status (cancelled)
+url: "{{baseUrl}}/api/db/query"
+method: POST
+headers:
+  Content-Type: application/json
+body:
+  type: text
+  content: >-
+    {
+      "table": "orders",
+      "select": "*",
+      "filters": [
+        { "column": "id", "op": "eq", "value": "b8f29e90-1f0a-4c73-a971-94d7a9cd0c8b" },
+        { "column": "user_id", "op": "eq", "value": "fa2eeb96-e6f5-4c87-a86f-22602a1bbdf5" }
+      ],
+      "limit": 1
+    }
+auth:
+  type: bearer
+  credentials:
+    token: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJmYTJlZWI5Ni1lNmY1LTRjODctYTg2Zi0yMjYwMmExYmJkZjUiLCJ0eXBlIjoiYWNjZXNzIiwiZW1haWwiOiJkb2FubWluaGhpZXUxOTIwMDVAZ21haWwuY29tIiwicHJvdmlkZXIiOiJsb2NhbCIsImZ1bGxfbmFtZSI6IlVzZXIgUG9zdG1hbiIsImF2YXRhcl91cmwiOiIiLCJpYXQiOjE3NzU5ODA1MzksImV4cCI6MTc3NTk4MTQzOX0.xfeJkyUWNgtFAFHmoaoeCdmenE2xL-W4xdG9OfUtrrk"
+order: 3000

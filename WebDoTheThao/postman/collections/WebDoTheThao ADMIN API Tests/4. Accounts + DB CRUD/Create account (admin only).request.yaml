@@ -8,6 +8,7 @@ body:
   content: |-
     {
       "email": "{{tempAccountEmail}}",
+      "password": "{{tempAccountPassword}}",
       "full_name": "Staff tu collection admin",
       "phone": "0909001111",
       "address": "HCM",

@@ -34,6 +34,7 @@ Can cap nhat toi thieu:
 - `userPassword`
 - `userNewPassword`
 - `promotionCode` (neu muon test ap ma cu the)
+- `accessToken` (se duoc tu dong cap nhat sau login/refresh token)
 
 ### 4.2 Collection Admin
 
@@ -42,9 +43,11 @@ Can cap nhat toi thieu:
 - `baseUrl`
 - `adminEmail`
 - `adminPassword`
+- `accessToken` (se duoc set tu dong sau login/refresh)
 - `userEmail` (email user muc tieu de assign ma)
 - `promotionCode`
 - `tempAccountEmail`
+- `tempAccountPassword`
 
 ## 5) Thu tu chay khuyen nghi
 
@@ -55,13 +58,19 @@ Folder theo thu tu:
 1. `0. Bootstrap public data`
 2. `1. User auth`
 3. `2. Promotions + Reviews`
-4. `3. Logout`
+4. `3. Orders`
+5. `4. User DB APIs`
+6. `5. Logout`
 
 Ket qua mong doi:
 
 - Lay duoc `productId`
 - Dang nhap user thanh cong
+- Nhan duoc `access_token` va luu vao bien `accessToken`
 - Submit review thanh cong (co `reviewId`)
+- Tao duoc don hang qua RPC checkout (`orderId`)
+- Huy don hang user vua tao (`status = cancelled`)
+- Test duoc CRUD gio hang va query don hang cua user
 
 ### Buoc B - chay collection Admin
 
@@ -80,17 +89,41 @@ Ket qua mong doi:
 - Tao promotion thanh cong (`promotionId`)
 - Assign promotion cho user thanh cong
 - Moderate review thanh cong (neu co `reviewId`)
+- Tao account staff + reset password account user thanh cong
+- Query duoc cac bang admin hay dung (`branches`, `support_requests`)
+- Co the thong ke nhanh tong user va theo role (`customer/staff/admin`) trong folder `1. Bootstrap admin variables`
+- Co request `Query all orders (count total)` trong folder `1. Bootstrap admin variables` de thong ke tong don hang hien co
 
 ## 6) Script tu dong cap nhat bien
 
 Collection da co script test de set bien:
 
 - `productId` (tu query products)
+- `productPrice` (tu query products)
+- `searchKeyword` (tu khoa tim kiem san pham, mac dinh `vot`)
+- `userId` (tu API Current user)
 - `targetUserId` (tu query users theo email)
 - `promotionId`, `promotionCode`
 - `promotionAssignmentId`
+- `orderId` (tu API tao don)
 - `reviewId` (tu submit review hoac query pending review)
 - `resetCode` (tu forgot password request khi server tra `preview`)
+
+Trong folder `0. Bootstrap public data` cua collection User da co them request:
+
+- `Search products by name (public)` -> test tim kiem san pham theo ten bang `db/query` voi filter `op: ilike` tren cot `name`.
+
+Trong folder `1. User auth`:
+
+- `Login` tra ve `access_token` (JWT access token), Postman tu dong luu vao `accessToken`.
+- `Refresh access token` goi `POST /api/auth/refresh-token` de cap token moi (refresh token duoc luu trong HttpOnly cookie).
+- `Current user` da kem header `Authorization: Bearer {{accessToken}}` de test luong Bearer token.
+
+Trong folder `3. Orders` cua collection User da co them:
+
+- `Create checkout order (user)` -> dat don qua RPC `create_checkout_order_atomic`.
+- `Cancel my order (set status=cancelled)` -> huy don cua chinh user theo `orderId + userId`.
+- `Verify my order status (cancelled)` -> kiem tra lai trang thai sau khi huy.
 
 ## 7) Luu y quan trong
 

@@ -9,6 +9,8 @@
     { "key": "baseUrl", "value": "http://localhost:4000" },
     { "key": "adminEmail", "value": "admin@nikashop.com" },
     { "key": "adminPassword", "value": "123456" },
+    { "key": "accessToken", "value": "" },
+    { "key": "adminNewPassword", "value": "12345678" },
     { "key": "userEmail", "value": "user.postman@example.com" },
     { "key": "targetUserId", "value": "" },
     { "key": "promotionCode", "value": "KMPOSTMAN10" },
@@ -16,6 +18,7 @@
     { "key": "promotionAssignmentId", "value": "" },
     { "key": "reviewId", "value": "" },
     { "key": "tempAccountEmail", "value": "staff.postman@example.com" },
+    { "key": "tempAccountPassword", "value": "123456" },
     { "key": "productId", "value": "" }
   ],
   "item": [
@@ -24,6 +27,19 @@
       "item": [
         {
           "name": "Login admin",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const body = pm.response.json() || {};",
+                  "const token = body?.data?.access_token || '';",
+                  "if (token) pm.collectionVariables.set('accessToken', token);"
+                ]
+              }
+            }
+          ],
           "request": {
             "method": "POST",
             "header": [{ "key": "Content-Type", "value": "application/json" }],
@@ -35,10 +51,38 @@
           }
         },
         {
+          "name": "Refresh access token",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const body = pm.response.json() || {};",
+                  "const token = body?.data?.access_token || '';",
+                  "if (token) pm.collectionVariables.set('accessToken', token);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/api/auth/refresh-token"
+          }
+        },
+        {
           "name": "Session",
           "request": {
             "method": "GET",
             "url": "{{baseUrl}}/api/auth/session"
+          }
+        },
+        {
+          "name": "Current user (Bearer)",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{accessToken}}" }],
+            "url": "{{baseUrl}}/api/auth/user"
           }
         }
       ]
@@ -114,6 +158,126 @@
             "body": {
               "mode": "raw",
               "raw": "{\n  \"table\": \"reviews\",\n  \"select\": \"*\",\n  \"filters\": [\n    { \"column\": \"status\", \"op\": \"eq\", \"value\": \"pending\" }\n  ],\n  \"order\": { \"column\": \"created_at\", \"ascending\": false },\n  \"limit\": 5\n}"
+            },
+            "url": "{{baseUrl}}/api/db/query"
+          }
+        },
+        {
+          "name": "Query all users (count total)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const rows = pm.response.json()?.data || [];",
+                  "console.log('Total users:', Array.isArray(rows) ? rows.length : 0);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"table\": \"users\",\n  \"select\": \"id,email\",\n  \"limit\": 10000\n}"
+            },
+            "url": "{{baseUrl}}/api/db/query"
+          }
+        },
+        {
+          "name": "Query profiles role=customer (count)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const rows = pm.response.json()?.data || [];",
+                  "console.log('Total customers:', Array.isArray(rows) ? rows.length : 0);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"table\": \"profiles\",\n  \"select\": \"id,role\",\n  \"filters\": [\n    { \"column\": \"role\", \"op\": \"eq\", \"value\": \"customer\" }\n  ],\n  \"limit\": 10000\n}"
+            },
+            "url": "{{baseUrl}}/api/db/query"
+          }
+        },
+        {
+          "name": "Query profiles role=staff (count)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const rows = pm.response.json()?.data || [];",
+                  "console.log('Total staff:', Array.isArray(rows) ? rows.length : 0);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"table\": \"profiles\",\n  \"select\": \"id,role\",\n  \"filters\": [\n    { \"column\": \"role\", \"op\": \"eq\", \"value\": \"staff\" }\n  ],\n  \"limit\": 10000\n}"
+            },
+            "url": "{{baseUrl}}/api/db/query"
+          }
+        },
+        {
+          "name": "Query profiles role=admin (count)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const rows = pm.response.json()?.data || [];",
+                  "console.log('Total admins:', Array.isArray(rows) ? rows.length : 0);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"table\": \"profiles\",\n  \"select\": \"id,role\",\n  \"filters\": [\n    { \"column\": \"role\", \"op\": \"eq\", \"value\": \"admin\" }\n  ],\n  \"limit\": 10000\n}"
+            },
+            "url": "{{baseUrl}}/api/db/query"
+          }
+        },
+        {
+          "name": "Query all orders (count total)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const rows = pm.response.json()?.data || [];",
+                  "console.log('Total orders:', Array.isArray(rows) ? rows.length : 0);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"table\": \"orders\",\n  \"select\": \"id,status,total,created_at\",\n  \"order\": { \"column\": \"created_at\", \"ascending\": false },\n  \"limit\": 10000\n}"
             },
             "url": "{{baseUrl}}/api/db/query"
           }
@@ -208,9 +372,45 @@
             "header": [{ "key": "Content-Type", "value": "application/json" }],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"email\": \"{{tempAccountEmail}}\",\n  \"full_name\": \"Staff tu collection admin\",\n  \"phone\": \"0909001111\",\n  \"address\": \"HCM\",\n  \"role\": \"staff\"\n}"
+              "raw": "{\n  \"email\": \"{{tempAccountEmail}}\",\n  \"password\": \"{{tempAccountPassword}}\",\n  \"full_name\": \"Staff tu collection admin\",\n  \"phone\": \"0909001111\",\n  \"address\": \"HCM\",\n  \"role\": \"staff\"\n}"
             },
             "url": "{{baseUrl}}/api/auth/admin/create-account"
+          }
+        },
+        {
+          "name": "Admin reset target account password",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"target_user_id\": \"{{targetUserId}}\",\n  \"new_password\": \"123456\"\n}"
+            },
+            "url": "{{baseUrl}}/api/auth/admin/reset-account-password"
+          }
+        },
+        {
+          "name": "DB query branches",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"table\": \"branches\",\n  \"select\": \"*\",\n  \"order\": { \"column\": \"name\", \"ascending\": true },\n  \"limit\": 20\n}"
+            },
+            "url": "{{baseUrl}}/api/db/query"
+          }
+        },
+        {
+          "name": "DB query support requests",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"table\": \"support_requests\",\n  \"select\": \"*\",\n  \"order\": { \"column\": \"created_at\", \"ascending\": false },\n  \"limit\": 10\n}"
+            },
+            "url": "{{baseUrl}}/api/db/query"
           }
         },
         {

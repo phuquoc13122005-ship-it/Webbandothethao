@@ -307,3 +307,108 @@
 - **Tính năng:** Căn lại bố cục trường địa chỉ cùng hàng với SĐT trong form chỉnh sửa tài khoản
 - **Trạng thái:** Tiếp tục làm dở dang
 - **Mô tả ngắn gọn:** Cập nhật `WebDoTheThao/project/src/pages/StaffDashboardPage.tsx` tại form edit tài khoản để trường `Địa chỉ` không còn chiếm toàn dòng (`md:col-span-2`), nhờ đó hiển thị cùng hàng với trường `Số điện thoại` theo bố cục 2 cột.
+
+- **Ngày/Giờ:** 2026-04-10 19:33:20
+- **Tính năng:** Hiển thị “Đang có hàng tại” theo chi nhánh admin đã set
+- **Trạng thái:** Tiếp tục làm dở dang
+- **Mô tả ngắn gọn:** Cập nhật `WebDoTheThao/project/src/pages/ProductDetailPage.tsx` để bỏ text chi nhánh hardcode, đọc trực tiếp từ `product.branch_name` (admin chọn khi tạo/sửa sản phẩm), hỗ trợ tách nhiều chi nhánh bằng dấu phẩy/chấm phẩy và fallback `Chưa cập nhật chi nhánh` khi chưa set.
+
+- **Ngày/Giờ:** 2026-04-10 19:37:18
+- **Tính năng:** Chọn nhiều chi nhánh bằng checkbox trong form sản phẩm admin
+- **Trạng thái:** Tiếp tục làm dở dang
+- **Mô tả ngắn gọn:** Cập nhật `WebDoTheThao/project/src/pages/StaffDashboardPage.tsx` để đổi ô `Chi nhánh` từ select 1 giá trị sang checklist nhiều lựa chọn (giống ô `Đối tượng`) ở cả form thêm mới và chỉnh sửa sản phẩm; dữ liệu vẫn lưu vào `branch_name` dạng CSV tương thích luồng cũ. Cập nhật `WebDoTheThao/project/src/pages/ProductsPage.tsx` để filter chi nhánh hỗ trợ sản phẩm có nhiều chi nhánh trong cùng một giá trị CSV.
+
+- **Ngày/Giờ:** 2026-04-11 15:19:45
+- **Tính năng:** Bổ sung API test tìm kiếm sản phẩm cho Postman User collection
+- **Trạng thái:** Tiếp tục làm dở dang
+- **Mô tả ngắn gọn:** Cập nhật `postman-user-api.collection.json` thêm biến `searchKeyword` và request `Search products by name (public)` dùng `POST /api/db/query` với filter `op: ilike` theo cột `name`; cập nhật `README_POSTMAN.md` để hướng dẫn biến/tác vụ mới trong luồng Bootstrap User.
+
+- **Ngày/Giờ:** 2026-04-11 15:26:21
+- **Tính năng:** Bổ sung luồng đặt sản phẩm và hủy sản phẩm trong Postman User collection
+- **Trạng thái:** Tiếp tục làm dở dang
+- **Mô tả ngắn gọn:** Cập nhật `postman-user-api.collection.json` thêm biến `userId/productPrice/orderId/shippingAddress/orderQuantity`, lưu `userId` từ API `Current user`, thêm folder `3. Orders` gồm request tạo đơn qua RPC `create_checkout_order_atomic`, hủy đơn bằng `db/update` (lọc `orderId + userId`) và kiểm tra lại trạng thái đơn; cập nhật `README_POSTMAN.md` về thứ tự chạy và mô tả luồng Orders mới.
+
+- **Ngày/Giờ:** 2026-04-11 15:50:09
+- **Tính năng:** Triển khai JWT access/refresh token song song session
+- **Trạng thái:** Làm mới hoàn toàn
+- **Mô tả ngắn gọn:** Cập nhật `auth-server.js` thêm xác thực JWT gồm sinh `access_token` + `refresh_token` khi login/register/verify OTP, endpoint `POST /api/auth/refresh-token`, hỗ trợ Bearer token trong `requireSession` và các API `session/user`, đồng thời vẫn giữ tương thích session cookie cũ; cập nhật `.env.example` thêm biến cấu hình JWT; cập nhật `postman-user-api.collection.json` và `README_POSTMAN.md` để test luồng token (login lấy access token, refresh token, gọi API với Authorization Bearer).
+
+- **Ngày/Giờ:** 2026-04-11 16:14:55
+- **Tính năng:** Mở rộng bộ Postman API full cho User/Admin
+- **Trạng thái:** Tiếp tục làm dở dang
+- **Mô tả ngắn gọn:** Cập nhật `postman-user-api.collection.json` bổ sung nhóm `User DB APIs` (query/insert/update/delete giỏ hàng, query đơn hàng), thêm `update-password` legacy và biến `cartItemId`; cập nhật `postman-admin-api.collection.json` bổ sung test `refresh token`, `current user (Bearer)`, `admin reset-account-password`, query `branches/support_requests`, và thêm biến `accessToken/tempAccountPassword`; cập nhật `README_POSTMAN.md` để đồng bộ thứ tự chạy và phạm vi coverage mới cho cả user/admin.
+
+- **Ngày/Giờ:** 2026-04-12 13:20:49
+- **Tính năng:** Nhập nhanh danh mục và sản phẩm mẫu theo cấu trúc ShopVNB
+- **Trạng thái:** Làm mới hoàn toàn
+- **Mô tả ngắn gọn:** Cập nhật `WebDoTheThao/project/src/pages/StaffDashboardPage.tsx` thêm bộ seed danh mục/sản phẩm tham chiếu từ `shopvnb.com` và chức năng `Nhập nhanh ShopVNB` trong tab `Danh sách sản phẩm` và `Danh mục`; chức năng tự tạo danh mục còn thiếu, tự tạo sản phẩm mẫu theo đúng nhóm bộ môn/size type, bỏ qua dữ liệu đã tồn tại theo `slug`, và hiển thị thống kê số lượng nhập thành công/thất bại.
+
+- **Ngày/Giờ:** 2026-04-12 13:24:12
+- **Tính năng:** Mở rộng thêm sản phẩm mẫu cho nút nhập nhanh ShopVNB
+- **Trạng thái:** Tiếp tục làm dở dang
+- **Mô tả ngắn gọn:** Cập nhật `WebDoTheThao/project/src/pages/StaffDashboardPage.tsx` để mở rộng danh sách `SHOPVNB_PRODUCT_SEEDS` với thêm nhiều sản phẩm cầu lông/pickleball/tennis (vợt, giày, áo, quần) nhằm tăng độ đầy đủ dữ liệu sau khi bấm `Nhập nhanh ShopVNB`.
+
+- **Ngày/Giờ:** 2026-04-12 13:27:20
+- **Tính năng:** Tự động đảm bảo mỗi danh mục ShopVNB có 10 sản phẩm mẫu
+- **Trạng thái:** Tiếp tục làm dở dang
+- **Mô tả ngắn gọn:** Cập nhật `WebDoTheThao/project/src/pages/StaffDashboardPage.tsx` thêm cơ chế sinh danh sách sản phẩm mở rộng từ seed gốc (`SHOPVNB_PRODUCT_SEEDS_EXPANDED`) để mỗi danh mục mục tiêu có tối đa 10 sản phẩm, tự tạo biến thể tên/slug/giá/ảnh khi thiếu mẫu và chống trùng slug trước khi import.
+
+- **Ngày/Giờ:** 2026-04-12 15:51:49
+- **Tính năng:** Bổ sung API thống kê số lượng user cho Admin Postman collection
+- **Trạng thái:** Tiếp tục làm dở dang
+- **Mô tả ngắn gọn:** Cập nhật `postman-admin-api.collection.json` trong folder `1. Bootstrap admin variables` thêm các request đếm nhanh `tổng users`, `profiles role=customer`, `profiles role=staff`, `profiles role=admin`; cập nhật `README_POSTMAN.md` hướng dẫn vị trí chạy thống kê user theo role.
+
+- **Ngày/Giờ:** 2026-04-12 15:57:07
+- **Tính năng:** Bổ sung API thống kê tổng đơn hàng cho Admin Postman collection
+- **Trạng thái:** Tiếp tục làm dở dang
+- **Mô tả ngắn gọn:** Cập nhật `postman-admin-api.collection.json` thêm request `Query all orders (count total)` trong folder `1. Bootstrap admin variables` để đếm tổng đơn hàng hiện có; cập nhật `README_POSTMAN.md` ghi rõ vị trí request thống kê đơn.
+
+- **Ngày/Giờ:** 2026-04-12 20:11:11
+- **Tính năng:** Bổ sung lựa chọn thông số vợt (3U/4U) và màu cho dữ liệu sản phẩm import nhanh
+- **Trạng thái:** Tiếp tục làm dở dang
+- **Mô tả ngắn gọn:** Cập nhật `WebDoTheThao/project/src/pages/StaffDashboardPage.tsx` mở rộng seed sản phẩm với `size_options` và `color_options` cho nhóm vợt/pickleball/tennis; khi import sẽ lưu luôn tùy chọn thông số (ví dụ `3U, 4U`) để hiển thị lựa chọn trên trang sản phẩm, đồng thời vẫn giữ ảnh sản phẩm theo seed hiện có.
+
+- **Ngày/Giờ:** 2026-04-13 20:39:07
+- **Tính năng:** Thêm nút hiện/ẩn thanh công cụ cho trang Admin Dashboard
+- **Trạng thái:** Tiếp tục làm dở dang
+- **Mô tả ngắn gọn:** Cập nhật `WebDoTheThao/project/src/pages/StaffDashboardPage.tsx` bổ sung state `isSidebarOpen`, thêm nút toggle trong header admin để bật/tắt sidebar công cụ, hỗ trợ đóng tự động trên màn hình nhỏ khi chọn tab và thêm lớp nền overlay để thao tác giống menu trượt.
+
+- **Ngày/Giờ:** 2026-04-13 20:42:29
+- **Tính năng:** Sửa lỗi lệch layout sidebar admin sau khi thêm nút công cụ
+- **Trạng thái:** Tiếp tục làm dở dang
+- **Mô tả ngắn gọn:** Cập nhật lại `WebDoTheThao/project/src/pages/StaffDashboardPage.tsx` để bỏ cơ chế sidebar `fixed top-[80px]` gây lệch giao diện, trả về bố cục `flex` ổn định như cũ và bổ sung nút nổi mobile để mở/đóng menu công cụ thuận tiện.
+
+- **Ngày/Giờ:** 2026-04-13 20:44:01
+- **Tính năng:** Dời nút điều khiển menu admin xuống dưới dòng Admin panel
+- **Trạng thái:** Tiếp tục làm dở dang
+- **Mô tả ngắn gọn:** Cập nhật `WebDoTheThao/project/src/pages/StaffDashboardPage.tsx` để bỏ nút toggle ở header nội dung, thêm nút nhỏ `Ẩn công cụ` ngay dưới khu vực logo + dòng `Admin panel` trong sidebar; khi sidebar đang ẩn thì hiển thị nút nổi nhỏ bên trái để mở lại.
+
+- **Ngày/Giờ:** 2026-04-13 20:45:15
+- **Tính năng:** Dời nút điều khiển công cụ xuống dưới tiêu đề Admin Dashboard
+- **Trạng thái:** Tiếp tục làm dở dang
+- **Mô tả ngắn gọn:** Cập nhật `WebDoTheThao/project/src/pages/StaffDashboardPage.tsx` để chuyển nút hiện/ẩn sidebar từ khu vực sidebar sang ngay dưới tiêu đề trang (`Admin Dashboard`) trong khung nội dung, đồng thời bỏ nút nổi cố định bên trái để tránh gây nhiễu giao diện.
+
+- **Ngày/Giờ:** 2026-04-13 20:48:14
+- **Tính năng:** Thu gọn sidebar admin về dạng chỉ icon thay vì ẩn hoàn toàn
+- **Trạng thái:** Tiếp tục làm dở dang
+- **Mô tả ngắn gọn:** Cập nhật `WebDoTheThao/project/src/pages/StaffDashboardPage.tsx` để khi bấm nút dưới tiêu đề `Admin Dashboard`, sidebar không bị ẩn mà chuyển sang bản thu gọn chiều rộng nhỏ chỉ hiển thị icon; trạng thái active vẫn giữ, menu con chỉ hiển thị khi sidebar mở rộng, và có tooltip qua `title` cho các icon.
+
+- **Ngày/Giờ:** 2026-04-13 20:52:41
+- **Tính năng:** Thay icon nút thu gọn/mở rộng sidebar theo mẫu sidebar-expand
+- **Trạng thái:** Tiếp tục làm dở dang
+- **Mô tả ngắn gọn:** Cập nhật `WebDoTheThao/project/src/pages/StaffDashboardPage.tsx` thay icon `X/Menu` của nút dưới `Admin Dashboard` bằng icon SVG dạng khung sidebar + mũi tên giống mẫu bạn gửi (`sidebar-left-expand`), đồng thời giữ nguyên logic thu gọn sidebar về cột icon.
+
+- **Ngày/Giờ:** 2026-04-13 20:54:03
+- **Tính năng:** Tối giản nút thu gọn sidebar chỉ còn icon
+- **Trạng thái:** Tiếp tục làm dở dang
+- **Mô tả ngắn gọn:** Cập nhật `WebDoTheThao/project/src/pages/StaffDashboardPage.tsx` để bỏ text `Ẩn công cụ/Hiện công cụ`, giữ lại nút toggle dạng icon-only với kích thước vuông nhỏ gọn và vẫn giữ `aria-label` cho truy cập.
+
+- **Ngày/Giờ:** 2026-04-13 20:59:51
+- **Tính năng:** Thêm nút xóa sản phẩm cạnh nút sửa trong danh sách sản phẩm admin
+- **Trạng thái:** Tiếp tục làm dở dang
+- **Mô tả ngắn gọn:** Cập nhật `WebDoTheThao/project/src/pages/StaffDashboardPage.tsx` thêm hàm `handleDeleteProduct` (chỉ admin, có hộp xác nhận, xử lý lỗi), thêm nút `Xóa` cạnh `Sửa` ở danh sách sản phẩm, và đồng bộ dọn state liên quan tồn kho/size sau khi xóa thành công.
+
+- **Ngày/Giờ:** 2026-04-13 21:07:07
+- **Tính năng:** Bổ sung tìm kiếm sản phẩm trong mục Quản lý kho
+- **Trạng thái:** Tiếp tục làm dở dang
+- **Mô tả ngắn gọn:** Cập nhật `WebDoTheThao/project/src/pages/StaffDashboardPage.tsx` thêm ô nhập từ khóa trong tab `Quản lý kho`, bổ sung lọc danh sách tồn kho theo tên/SKU/thương hiệu (không phân biệt hoa thường và dấu tiếng Việt), giới hạn theo `MAX_RENDER_ITEMS`, và hiển thị thông báo khi không có kết quả.

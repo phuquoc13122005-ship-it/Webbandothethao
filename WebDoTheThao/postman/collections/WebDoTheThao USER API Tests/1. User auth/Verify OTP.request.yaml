@@ -10,4 +10,4 @@ body:
       "email": "{{userEmail}}",
       "token": "{{otpToken}}"
     }
-order: 7000
+order: 9000

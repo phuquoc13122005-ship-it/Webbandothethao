@@ -1,0 +1,7 @@
+$kind: collection
+name: 1. User auth
+auth:
+  type: bearer
+  credentials:
+    token: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiI5YjQxOGNkMS00MTg4LTQ3YjYtOTM1YS1hMDM5NzVkMWM2MWYiLCJ0eXBlIjoiYWNjZXNzIiwiZW1haWwiOiJrZW5ueWRvYW4xOTIwMDVAZ21haWwuY29tIiwicHJvdmlkZXIiOiJsb2NhbCIsImZ1bGxfbmFtZSI6IlVzZXIgUG9zdG1hbiIsImF2YXRhcl91cmwiOiIiLCJpYXQiOjE3NzU5OTAyMTcsImV4cCI6MTc3NTk5MTExN30.BbdfFvzJTttJ21ePMy1UAnSsy2-Fly2-xZxN4yT1Z84
+order: 2613830369673215

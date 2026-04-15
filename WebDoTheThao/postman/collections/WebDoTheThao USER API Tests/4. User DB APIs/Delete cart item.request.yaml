@@ -1,0 +1,16 @@
+$kind: http-request
+url: "{{baseUrl}}/api/db/delete"
+method: POST
+headers:
+  Content-Type: application/json
+body:
+  type: text
+  content: |-
+    {
+      "table": "cart_items",
+      "filters": [
+        { "column": "id", "op": "eq", "value": "{{cartItemId}}" },
+        { "column": "user_id", "op": "eq", "value": "{{userId}}" }
+      ]
+    }
+order: 4000

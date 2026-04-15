@@ -8,6 +8,7 @@ const nodemailer = require('nodemailer');
 const { randomUUID, randomInt } = require('crypto');
 const mysql = require('mysql2/promise');
 const bcrypt = require('bcryptjs');
+const jwt = require('jsonwebtoken');
 
 dotenv.config({ path: path.join(__dirname, '.env'), override: true });
 
@@ -15,6 +16,12 @@ const app = express();
 const PORT = process.env.PORT || 4000;
 const FRONTEND_URL = process.env.FRONTEND_URL || 'http://localhost:5173';
 const SESSION_SECRET = process.env.SESSION_SECRET || 'change-me-in-env';
+const JWT_ACCESS_SECRET = process.env.JWT_ACCESS_SECRET || `${SESSION_SECRET}_access`;
+const JWT_REFRESH_SECRET = process.env.JWT_REFRESH_SECRET || `${SESSION_SECRET}_refresh`;
+const JWT_ACCESS_EXPIRES_IN = process.env.JWT_ACCESS_EXPIRES_IN || '15m';
+const JWT_REFRESH_EXPIRES_IN = process.env.JWT_REFRESH_EXPIRES_IN || '7d';
+const JWT_REFRESH_COOKIE_NAME = process.env.JWT_REFRESH_COOKIE_NAME || 'refresh_token';
+const JWT_REFRESH_COOKIE_MAX_AGE_MS = Number(process.env.JWT_REFRESH_COOKIE_MAX_AGE_MS || 7 * 24 * 60 * 60 * 1000);
 const SMTP_HOST = process.env.SMTP_HOST;
 const SMTP_PORT = Number(process.env.SMTP_PORT || 587);
 const SMTP_USER = process.env.SMTP_USER;
@@ -95,6 +102,120 @@ function toAuthUser(user) {
       avatar_url: user.avatar_url || '',
     },
   };
+}
+
+function buildSessionUser(user) {
+  return {
+    id: String(user.id || ''),
+    email: user.email || null,
+    provider: user.provider || 'local',
+    full_name: user.full_name || '',
+    avatar_url: user.avatar_url || '',
+  };
+}
+
+function issueAccessToken(user) {
+  return jwt.sign(
+    {
+      sub: String(user.id || ''),
+      type: 'access',
+      email: user.email || null,
+      provider: user.provider || 'local',
+      full_name: user.full_name || '',
+      avatar_url: user.avatar_url || '',
+    },
+    JWT_ACCESS_SECRET,
+    { expiresIn: JWT_ACCESS_EXPIRES_IN },
+  );
+}
+
+function issueRefreshToken(user) {
+  return jwt.sign(
+    {
+      sub: String(user.id || ''),
+      type: 'refresh',
+      email: user.email || null,
+      provider: user.provider || 'local',
+    },
+    JWT_REFRESH_SECRET,
+    { expiresIn: JWT_REFRESH_EXPIRES_IN },
+  );
+}
+
+function issueAuthTokens(user) {
+  return {
+    accessToken: issueAccessToken(user),
+    refreshToken: issueRefreshToken(user),
+  };
+}
+
+function setRefreshTokenCookie(res, refreshToken) {
+  res.cookie(JWT_REFRESH_COOKIE_NAME, refreshToken, {
+    httpOnly: true,
+    secure: false,
+    sameSite: 'lax',
+    maxAge: JWT_REFRESH_COOKIE_MAX_AGE_MS,
+  });
+}
+
+function clearRefreshTokenCookie(res) {
+  res.clearCookie(JWT_REFRESH_COOKIE_NAME);
+}
+
+function getCookieValue(req, key) {
+  const cookieHeader = String(req.headers?.cookie || '');
+  if (!cookieHeader) return '';
+  const parts = cookieHeader.split(';');
+  for (const part of parts) {
+    const [cookieKey, ...cookieValueParts] = part.trim().split('=');
+    if (cookieKey === key) {
+      return decodeURIComponent(cookieValueParts.join('='));
+    }
+  }
+  return '';
+}
+
+async function loadUserWithProfileById(userId) {
+  const id = String(userId || '').trim();
+  if (!id) return null;
+  const rows = await runQuery(
+    'select u.id, u.email, u.provider, p.full_name, p.avatar_url from users u left join profiles p on p.id = u.id where u.id = ? limit 1',
+    [id],
+  );
+  if (!rows.length) return null;
+  return buildSessionUser(rows[0]);
+}
+
+async function authenticateByAccessToken(req) {
+  const authHeader = String(req.headers.authorization || '');
+  if (!authHeader.toLowerCase().startsWith('bearer ')) return null;
+  const accessToken = authHeader.slice(7).trim();
+  if (!accessToken) return null;
+  try {
+    const decoded = jwt.verify(accessToken, JWT_ACCESS_SECRET);
+    if (String(decoded?.type || '') !== 'access') return null;
+    const tokenUser = await loadUserWithProfileById(decoded?.sub);
+    if (!tokenUser) return null;
+    req.session.user = tokenUser;
+    return tokenUser;
+  } catch {
+    return null;
+  }
+}
+
+async function respondWithAuthSuccess(res, user) {
+  const safeUser = buildSessionUser(user);
+  const { accessToken, refreshToken } = issueAuthTokens(safeUser);
+  setRefreshTokenCookie(res, refreshToken);
+  return res.json({
+    data: {
+      user: toAuthUser(safeUser),
+      access_token: accessToken,
+      token_type: 'Bearer',
+      expires_in: JWT_ACCESS_EXPIRES_IN,
+    },
+    error: null,
+  });
 }
 
 async function runQuery(sql, params = []) {
@@ -445,8 +566,12 @@ async function decorateRows(table, selectText, rows) {
   return rows;
 }
 
-function requireSession(req, res, next) {
-  if (!req.session.user?.id) {
+async function requireSession(req, res, next) {
+  if (req.session.user?.id) {
+    return next();
+  }
+  const tokenUser = await authenticateByAccessToken(req);
+  if (!tokenUser?.id) {
     return res.status(401).json({ error: { message: 'UNAUTHENTICATED' } });
   }
   return next();
@@ -602,13 +727,15 @@ app.get('/auth/google/callback', async (req, res) => {
       );
     }
 
-    req.session.user = {
+    req.session.user = buildSessionUser({
       provider: 'google',
       id: appUserId || String(data.id || ''),
       email: googleEmail || null,
       full_name: googleName,
       avatar_url: googleAvatar,
-    };
+    });
+    const { refreshToken } = issueAuthTokens(req.session.user);
+    setRefreshTokenCookie(res, refreshToken);
     delete req.session.oauthState;
 
     return res.redirect(`${FRONTEND_URL}/`);
@@ -628,6 +755,7 @@ app.get('/auth/me', (req, res) => {
 app.post('/auth/logout', (req, res) => {
   req.session.destroy(() => {
     res.clearCookie('sid');
+    clearRefreshTokenCookie(res);
     res.json({ ok: true });
   });
 });
@@ -654,15 +782,15 @@ app.post('/api/auth/register', async (req, res) => {
       [id, fullName || '', '', '', '', 'customer'],
     );
 
-    req.session.user = {
+    req.session.user = buildSessionUser({
       id,
       email,
       provider: 'local',
       full_name: fullName || '',
       avatar_url: '',
-    };
+    });
 
-    return res.json({ data: { user: toAuthUser(req.session.user) }, error: null });
+    return respondWithAuthSuccess(res, req.session.user);
   } catch (error) {
     return res.status(500).json({ error: { message: error.message } });
   }
@@ -1202,14 +1330,8 @@ app.post('/api/auth/login', async (req, res) => {
       return res.status(401).json({ error: { message: 'Invalid login credentials' } });
     }
 
-    req.session.user = {
-      id: user.id,
-      email: user.email,
-      provider: user.provider || 'local',
-      full_name: user.full_name || '',
-      avatar_url: user.avatar_url || '',
-    };
-    return res.json({ data: { user: toAuthUser(req.session.user) }, error: null });
+    req.session.user = buildSessionUser(user);
+    return respondWithAuthSuccess(res, req.session.user);
   } catch (error) {
     return res.status(500).json({ error: { message: error.message } });
   }
@@ -1218,22 +1340,57 @@ app.post('/api/auth/login', async (req, res) => {
 app.post('/api/auth/logout', (req, res) => {
   req.session.destroy(() => {
     res.clearCookie('sid');
+    clearRefreshTokenCookie(res);
     res.json({ data: { ok: true }, error: null });
   });
 });
 
-app.get('/api/auth/session', (req, res) => {
+app.get('/api/auth/session', async (req, res) => {
+  if (!req.session.user) {
+    await authenticateByAccessToken(req);
+  }
   if (!req.session.user) {
     return res.json({ data: { session: null }, error: null });
   }
   return res.json({ data: { session: { user: toAuthUser(req.session.user) } }, error: null });
 });
 
-app.get('/api/auth/user', (req, res) => {
+app.get('/api/auth/user', async (req, res) => {
+  if (!req.session.user) {
+    await authenticateByAccessToken(req);
+  }
   if (!req.session.user) {
     return res.status(401).json({ data: { user: null }, error: { message: 'UNAUTHENTICATED' } });
   }
   return res.json({ data: { user: toAuthUser(req.session.user) }, error: null });
+});
+
+app.post('/api/auth/refresh-token', async (req, res) => {
+  try {
+    const refreshTokenFromCookie = getCookieValue(req, JWT_REFRESH_COOKIE_NAME);
+    const refreshTokenFromBody = String(req.body?.refresh_token || '').trim();
+    const refreshToken = refreshTokenFromCookie || refreshTokenFromBody;
+    if (!refreshToken) {
+      return res.status(401).json({ error: { message: 'REFRESH_TOKEN_REQUIRED' } });
+    }
+    let decoded;
+    try {
+      decoded = jwt.verify(refreshToken, JWT_REFRESH_SECRET);
+    } catch {
+      return res.status(401).json({ error: { message: 'INVALID_REFRESH_TOKEN' } });
+    }
+    if (String(decoded?.type || '') !== 'refresh') {
+      return res.status(401).json({ error: { message: 'INVALID_REFRESH_TOKEN' } });
+    }
+    const user = await loadUserWithProfileById(decoded?.sub);
+    if (!user) {
+      return res.status(401).json({ error: { message: 'USER_NOT_FOUND' } });
+    }
+    req.session.user = user;
+    return respondWithAuthSuccess(res, user);
+  } catch (error) {
+    return res.status(500).json({ error: { message: error.message } });
+  }
 });
 
 app.post('/api/auth/send-otp', async (req, res) => {
@@ -1287,15 +1444,9 @@ app.post('/api/auth/verify-otp', async (req, res) => {
       return res.status(404).json({ error: { message: 'USER_NOT_FOUND' } });
     }
     const user = users[0];
-    req.session.user = {
-      id: user.id,
-      email: user.email,
-      provider: user.provider || 'local',
-      full_name: user.full_name || '',
-      avatar_url: user.avatar_url || '',
-    };
+    req.session.user = buildSessionUser(user);
     otpStore.delete(email);
-    return res.json({ data: { user: toAuthUser(req.session.user) }, error: null });
+    return respondWithAuthSuccess(res, req.session.user);
   } catch (error) {
     return res.status(500).json({ error: { message: error.message } });
   }
