@@ -412,3 +412,123 @@
 - **Tính năng:** Bổ sung tìm kiếm sản phẩm trong mục Quản lý kho
 - **Trạng thái:** Tiếp tục làm dở dang
 - **Mô tả ngắn gọn:** Cập nhật `WebDoTheThao/project/src/pages/StaffDashboardPage.tsx` thêm ô nhập từ khóa trong tab `Quản lý kho`, bổ sung lọc danh sách tồn kho theo tên/SKU/thương hiệu (không phân biệt hoa thường và dấu tiếng Việt), giới hạn theo `MAX_RENDER_ITEMS`, và hiển thị thông báo khi không có kết quả.
+
+- **Ngày/Giờ:** 2026-04-15 20:40:10
+- **Tính năng:** Siết phân quyền trang Staff theo vai trò Admin/Staff
+- **Trạng thái:** Tiếp tục làm dở dang
+- **Mô tả ngắn gọn:** Cập nhật `WebDoTheThao/project/src/pages/StaffDashboardPage.tsx` để giới hạn tab của staff (không vào `overview` và `employees`, tự điều hướng về `products_list`), chỉ hiển thị mục khách hàng trong nhóm tài khoản đối với staff, đồng thời thêm chặn quyền ở mức handler cho các thao tác xóa dữ liệu (`categories`, `home_category_sections`, `banners`, `delete all banners`) chỉ cho admin.
+
+- **Ngày/Giờ:** 2026-04-15 20:47:24
+- **Tính năng:** Chuyển quản lý tồn kho sang popup chỉnh sửa khi bấm vào sản phẩm
+- **Trạng thái:** Tiếp tục làm dở dang
+- **Mô tả ngắn gọn:** Cập nhật `WebDoTheThao/project/src/pages/StaffDashboardPage.tsx` để tab `Quản lý kho` chỉ hiển thị danh sách sản phẩm (không còn các nút chỉnh trực tiếp), khi bấm vào sản phẩm sẽ mở popup cho phép chọn size và chỉnh số lượng tồn kho rồi lưu; bổ sung state popup và tái sử dụng luồng cập nhật tồn kho hiện có.
+
+- **Ngày/Giờ:** 2026-04-15 20:49:50
+- **Tính năng:** Chuyển danh sách sản phẩm sang popup chỉnh sửa khi bấm item
+- **Trạng thái:** Tiếp tục làm dở dang
+- **Mô tả ngắn gọn:** Cập nhật `WebDoTheThao/project/src/pages/StaffDashboardPage.tsx` để tab `Danh sách sản phẩm` bỏ nút `Sửa/Xóa` ngoài list, thay bằng tương tác bấm vào sản phẩm để mở popup chỉnh sửa đầy đủ thông tin; giữ các nút `Lưu/Hủy` trong popup và đưa `Xóa` vào popup (chỉ admin) để tránh thao tác trực tiếp trên danh sách.
+
+- **Ngày/Giờ:** 2026-04-18 14:48:33
+- **Tính năng:** Loại bỏ tiêu đề trùng lặp trong các tab sản phẩm
+- **Trạng thái:** Tiếp tục làm dở dang
+- **Mô tả ngắn gọn:** Cập nhật `WebDoTheThao/project/src/pages/StaffDashboardPage.tsx` để bỏ các tiêu đề phụ bị nhân bản ở phần nội dung của các tab `Danh sách sản phẩm`, `Quản lý kho`, `Sản phẩm mới`, `Sản phẩm nổi bật`; giữ lại tiêu đề chính trên header trang để giao diện không lặp chữ.
+
+- **Ngày/Giờ:** 2026-04-18 14:59:12
+- **Tính năng:** Bổ sung tồn kho hiện tại theo size trong popup và đồng bộ trừ/cộng kho theo trạng thái đơn hàng
+- **Trạng thái:** Tiếp tục làm dở dang
+- **Mô tả ngắn gọn:** Cập nhật `WebDoTheThao/project/src/pages/StaffDashboardPage.tsx` để hiển thị thêm ô `Tồn kho hiện tại` ở giữa `Size` và `Số lượng tồn kho` trong popup quản lý kho, giá trị đọc theo đúng size đang chọn từ `size_stock` trong DB. Cập nhật `auth-server.js` để chuyển logic trừ kho sang thời điểm đơn được cập nhật `shipping`, cộng lại khi đơn chuyển `cancelled`, thêm cờ `orders.stock_deducted` để tránh trừ/cộng lặp khi trạng thái thay đổi nhiều lần.
+
+- **Ngày/Giờ:** 2026-04-18 15:02:20
+- **Tính năng:** Tối ưu khoảng trắng dư ở phần đầu giao diện dashboard
+- **Trạng thái:** Tiếp tục làm dở dang
+- **Mô tả ngắn gọn:** Cập nhật `WebDoTheThao/project/src/pages/StaffDashboardPage.tsx` để thu gọn header card phía trên: đưa nút toggle sidebar lên cùng hàng với tiêu đề tab và giảm padding dọc, giúp loại bỏ cảm giác dư khoảng trắng ở đầu trang.
+
+- **Ngày/Giờ:** 2026-04-18 15:05:14
+- **Tính năng:** Loại bỏ khoảng trắng mỏng ở mép trên toàn trang
+- **Trạng thái:** Tiếp tục làm dở dang
+- **Mô tả ngắn gọn:** Cập nhật `WebDoTheThao/project/src/index.css` thêm reset rõ ràng `m-0 p-0` cho `body` để loại bỏ khoảng trắng mỏng còn sót ở mép trên giao diện khi hiển thị dashboard.
+
+- **Ngày/Giờ:** 2026-04-18 15:15:12
+- **Tính năng:** Thiết kế lại bố cục form Thêm sản phẩm mới theo layout 3 cột
+- **Trạng thái:** Tiếp tục làm dở dang
+- **Mô tả ngắn gọn:** Cập nhật `WebDoTheThao/project/src/pages/StaffDashboardPage.tsx` để đổi form `Thêm sản phẩm mới` sang bố cục gần giống ảnh tham chiếu: cột trái `Thông tin cơ bản`, cột giữa `Ảnh & mô tả`, cột phải `Thuộc tính`; giữ nguyên toàn bộ logic nhập liệu/validation/upload và chỉ thay đổi tổ chức giao diện.
+
+- **Ngày/Giờ:** 2026-04-18 15:22:02
+- **Tính năng:** Điều chỉnh hiển thị ô giá bán sau giảm theo placeholder trong input
+- **Trạng thái:** Tiếp tục làm dở dang
+- **Mô tả ngắn gọn:** Cập nhật `WebDoTheThao/project/src/pages/StaffDashboardPage.tsx` để ô `Giá bán sau giảm` hiển thị chữ ngay trong ô dưới dạng placeholder (giống ô `Giảm giá`), và chỉ hiện số khi đã có `Giá gốc`.
+
+- **Ngày/Giờ:** 2026-04-18 15:28:04
+- **Tính năng:** Sửa luồng nút Sửa nhanh trong tab Sản phẩm mới/Nổi bật
+- **Trạng thái:** Tiếp tục làm dở dang
+- **Mô tả ngắn gọn:** Cập nhật `WebDoTheThao/project/src/pages/StaffDashboardPage.tsx` thêm hàm `handleQuickEditProduct` để đưa sản phẩm được chọn lên đầu danh sách rồi mở form chỉnh sửa đúng sản phẩm ngay khi bấm `Sửa nhanh`, tránh tình trạng mở lệch hoặc không hiển thị form mong muốn.
+
+- **Ngày/Giờ:** 2026-04-18 15:35:10
+- **Tính năng:** Sửa lỗi xóa ảnh phụ trong popup chỉnh sửa sản phẩm không lưu
+- **Trạng thái:** Tiếp tục làm dở dang
+- **Mô tả ngắn gọn:** Cập nhật `WebDoTheThao/project/src/pages/StaffDashboardPage.tsx` tại hàm `removeGalleryImage` để khi xóa ảnh khỏi gallery sẽ cập nhật đúng state và không tự thêm lại lúc bấm `Lưu`; nếu ảnh bị xóa đang là ảnh chính thì tự chuyển sang ảnh còn lại đầu tiên (hoặc rỗng nếu hết ảnh), đồng bộ cho cả form thêm mới và chỉnh sửa.
+
+- **Ngày/Giờ:** 2026-04-18 15:55:33
+- **Tính năng:** Thêm popup tạo nhóm danh mục động trong trang quản trị
+- **Trạng thái:** Làm mới hoàn toàn
+- **Mô tả ngắn gọn:** Cập nhật `WebDoTheThao/project/src/pages/StaffDashboardPage.tsx` để thêm nút `Thêm nhóm` mở popup nhỏ (tên nhóm + lưu), lưu nhóm vào DB và tự cập nhật dropdown nhóm tại `Danh mục`/`Section trang chủ`; cập nhật `WebDoTheThao/project/src/types/index.ts` để `CategoryProductGroup` hỗ trợ nhóm tùy biến; cập nhật `auth-server.js` thêm migration `category_groups` + seed nhóm mặc định để lưu bền vững.
+
+- **Ngày/Giờ:** 2026-04-18 15:56:49
+- **Tính năng:** Khắc phục lỗi TABLE_NOT_ALLOWED khi lưu nhóm danh mục mới
+- **Trạng thái:** Tiếp tục làm dở dang
+- **Mô tả ngắn gọn:** Cập nhật `auth-server.js` bổ sung bảng `category_groups` vào `TABLE_WHITELIST` của API DB (`/api/db/query|insert|update|delete`) để popup `Thêm nhóm` có thể lưu dữ liệu thành công thay vì bị chặn `TABLE_NOT_ALLOWED`.
+
+- **Ngày/Giờ:** 2026-04-18 16:04:02
+- **Tính năng:** Đưa block khuyến mãi vào giữa khu vực danh mục trang chủ
+- **Trạng thái:** Tiếp tục làm dở dang
+- **Mô tả ngắn gọn:** Cập nhật `WebDoTheThao/project/src/pages/HomePage.tsx` để chuyển section `Khuyến mãi đặc biệt` từ cuối trang lên ngay trước phần danh mục (`Sản phẩm cầu lông...`) và canh giữa bằng khung `max-w-5xl mx-auto`, giúp block ảnh 1 nằm giữa khu vực ảnh 2 theo bố cục mới.
+
+- **Ngày/Giờ:** 2026-04-18 16:13:45
+- **Tính năng:** Thêm quản trị nội dung trang Giới thiệu và hiển thị text-only ngoài frontend
+- **Trạng thái:** Làm mới hoàn toàn
+- **Mô tả ngắn gọn:** Cập nhật `WebDoTheThao/project/src/pages/StaffDashboardPage.tsx` thêm tab `Giới thiệu` (chỉ admin) để chỉnh sửa nội dung văn bản; cập nhật `WebDoTheThao/project/src/pages/AboutPage.tsx` và `WebDoTheThao/project/src/App.tsx` để tạo route `/gioi-thieu` hiển thị nội dung text-only; cập nhật `WebDoTheThao/project/src/components/layout/Header.tsx` để nút `Giới thiệu` trỏ đúng trang mới; cập nhật `auth-server.js` thêm bảng `site_contents` + whitelist/public-read cho nội dung giới thiệu.
+
+- **Ngày/Giờ:** 2026-04-18 16:17:23
+- **Tính năng:** Bổ sung nút Xem trước cho nội dung Giới thiệu trong admin
+- **Trạng thái:** Tiếp tục làm dở dang
+- **Mô tả ngắn gọn:** Cập nhật `WebDoTheThao/project/src/pages/StaffDashboardPage.tsx` thêm nút `Xem trước/Ẩn xem trước` trong tab `Giới thiệu`; khi bật sẽ render khối preview text-only theo đúng định dạng trang `/gioi-thieu` ngay dưới form để admin kiểm tra trước khi lưu.
+
+- **Ngày/Giờ:** 2026-04-18 16:27:57
+- **Tính năng:** Đổi thứ tự hiển thị Sản phẩm nổi bật nằm ngay dưới Khuyến mãi đặc biệt
+- **Trạng thái:** Tiếp tục làm dở dang
+- **Mô tả ngắn gọn:** Cập nhật `WebDoTheThao/project/src/pages/HomePage.tsx` để dời section `Sản phẩm nổi bật` từ cuối trang lên ngay sau section `Khuyến mãi đặc biệt`, đúng bố cục bạn yêu cầu; giữ nguyên UI/logic của từng section và chỉ thay đổi thứ tự render.
+
+- **Ngày/Giờ:** 2026-04-18 16:32:33
+- **Tính năng:** Sửa logic khối Khuyến mãi đặc biệt theo sản phẩm đang giảm giá
+- **Trạng thái:** Tiếp tục làm dở dang
+- **Mô tả ngắn gọn:** Cập nhật `WebDoTheThao/project/src/pages/HomePage.tsx` để khối `Khuyến mãi đặc biệt` lấy dữ liệu từ các sản phẩm có `original_price > price` (đang giảm giá), không còn phụ thuộc `featured`; đồng thời hiển thị `% giảm tối đa` động theo dữ liệu thật và thêm fallback thông báo khi chưa có sản phẩm giảm giá.
+
+- **Ngày/Giờ:** 2026-04-18 16:36:31
+- **Tính năng:** Khắc phục treo loading trang chủ sau khi đổi logic khuyến mãi
+- **Trạng thái:** Tiếp tục làm dở dang
+- **Mô tả ngắn gọn:** Cập nhật `WebDoTheThao/project/src/pages/HomePage.tsx` thay truy vấn `.gt('original_price', 0)` (không hỗ trợ trong `db.ts`) bằng truy vấn danh sách sản phẩm rồi lọc giảm giá ở client; đồng thời bọc `load()` bằng `try/finally` để luôn `setLoading(false)` tránh kẹt spinner vô hạn khi có lỗi runtime.
+
+- **Ngày/Giờ:** 2026-04-18 16:38:31
+- **Tính năng:** Điều hướng nút Mua ngay trong khối Khuyến mãi đặc biệt sang trang Sale off
+- **Trạng thái:** Tiếp tục làm dở dang
+- **Mô tả ngắn gọn:** Cập nhật `WebDoTheThao/project/src/pages/HomePage.tsx` đổi link nút `Mua ngay` trong section `Khuyến mãi đặc biệt` từ `/products` sang `/products?sale=1` để người dùng bấm vào sẽ đi thẳng tới trang lọc sản phẩm giảm giá.
+
+- **Ngày/Giờ:** 2026-04-18 16:43:27
+- **Tính năng:** Gỡ mục Tin tức khỏi thanh điều hướng header
+- **Trạng thái:** Tiếp tục làm dở dang
+- **Mô tả ngắn gọn:** Cập nhật `WebDoTheThao/project/src/components/layout/Header.tsx` để xóa link `Tin tức` trong menu điều hướng desktop, giữ nguyên thứ tự và logic các mục còn lại.
+
+- **Ngày/Giờ:** 2026-04-18 16:47:56
+- **Tính năng:** Sửa hành vi click banner chỉ điều hướng khi có đích sản phẩm/danh mục
+- **Trạng thái:** Tiếp tục làm dở dang
+- **Mô tả ngắn gọn:** Cập nhật `WebDoTheThao/project/src/pages/HomePage.tsx` để `getBannerTargetHref` trả `null` nếu banner không gắn `target_type=product/category` hoặc thiếu slug hợp lệ; chỉ render lớp `Link` phủ banner khi có đích hợp lệ, tránh banner thủ công vẫn điều hướng sai.
+
+- **Ngày/Giờ:** 2026-04-18 16:55:58
+- **Tính năng:** Sửa dứt điểm điều hướng banner theo sản phẩm/danh mục và đồng bộ nhãn banner thủ công
+- **Trạng thái:** Tiếp tục làm dở dang
+- **Mô tả ngắn gọn:** Cập nhật `WebDoTheThao/project/src/pages/HomePage.tsx` bổ sung nguồn map `id -> slug` sản phẩm riêng (`bannerProductRefs`) để banner `target_type=product` vẫn điều hướng đúng kể cả khi sản phẩm không nằm trong danh sách sản phẩm mới; cập nhật `WebDoTheThao/project/src/pages/StaffDashboardPage.tsx` đổi nhãn option từ `Ảnh thủ công, mở trang sản phẩm` thành `Ảnh thủ công (không gắn link)` để đúng hành vi mong muốn.
+
+- **Ngày/Giờ:** 2026-04-18 16:59:36
+- **Tính năng:** Tăng độ ổn định resolve link banner sản phẩm
+- **Trạng thái:** Tiếp tục làm dở dang
+- **Mô tả ngắn gọn:** Cập nhật `WebDoTheThao/project/src/pages/HomePage.tsx` để lấy map slug sản phẩm từ toàn bộ bảng `products` (`select id, slug` không giới hạn 500 bản ghi), tránh trường hợp banner `Lấy ảnh từ sản phẩm` có `target_product_id` hợp lệ nhưng không điều hướng do sản phẩm không nằm trong phạm vi query trước đó.

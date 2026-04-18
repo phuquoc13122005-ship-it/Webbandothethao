@@ -11,10 +11,12 @@ import {
   LayoutDashboard,
   Package,
   Pencil,
+  Plus,
   Save,
   Star,
   Eye,
   EyeOff,
+  FileText,
   Tags,
   TicketPercent,
   Trash2,
@@ -48,7 +50,8 @@ type StaffTab =
   | 'employees'
   | 'support'
   | 'promotions'
-  | 'reviews';
+  | 'reviews'
+  | 'about_content';
 
 interface OrderWithCustomer extends Order {
   customer?: AccountProfile;
@@ -103,6 +106,23 @@ interface BranchItem {
   slug?: string;
   is_active?: boolean | number;
   created_at?: string;
+}
+
+interface CategoryGroupItem {
+  id: string;
+  group_key: string;
+  group_label: string;
+  created_at?: string;
+}
+
+interface SiteContentItem {
+  id: string;
+  content_key: string;
+  content_title?: string | null;
+  content_value?: string | null;
+  updated_by?: string | null;
+  updated_at?: string | null;
+  created_at?: string | null;
 }
 
 interface HomeCategorySectionItem extends HomeCategorySection {
@@ -176,7 +196,7 @@ interface NewProductForm {
 type CategorySizeType = 'none' | 'apparel' | 'shoes';
 type BannerTargetType = 'none' | 'product' | 'category';
 type EditProductForm = NewProductForm;
-const CATEGORY_PRODUCT_GROUP_OPTIONS: Array<{ value: CategoryProductGroup; label: string }> = [
+const DEFAULT_CATEGORY_PRODUCT_GROUP_OPTIONS: Array<{ value: CategoryProductGroup; label: string }> = [
   { value: 'badminton', label: 'Sản phẩm cầu lông' },
   { value: 'tennis', label: 'Sản phẩm tennis' },
   { value: 'pickleball', label: 'Sản phẩm pickleball' },
@@ -670,6 +690,7 @@ const ALL_STAFF_TABS: StaffTab[] = [
   'support',
   'promotions',
   'reviews',
+  'about_content',
 ];
 
 function isStaffTab(value: string | null): value is StaffTab {
@@ -702,6 +723,16 @@ function slugify(value: string) {
     .trim()
     .replace(/\s+/g, '-')
     .replace(/-+/g, '-');
+}
+
+function formatGroupLabelFromKey(groupKey: string) {
+  const normalized = String(groupKey || '').trim();
+  if (!normalized) return 'Nhóm khác';
+  return normalized
+    .split('-')
+    .filter(Boolean)
+    .map(part => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(' ');
 }
 
 function normalizeSearchKeyword(value: string) {
@@ -891,6 +922,7 @@ export default function StaffDashboardPage() {
   const [orders, setOrders] = useState<OrderWithCustomer[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
+  const [categoryGroups, setCategoryGroups] = useState<CategoryGroupItem[]>([]);
   const [homeCategorySections, setHomeCategorySections] = useState<HomeCategorySectionItem[]>([]);
   const [branches, setBranches] = useState<BranchItem[]>([]);
   const [banners, setBanners] = useState<Banner[]>([]);
@@ -934,6 +966,12 @@ export default function StaffDashboardPage() {
   const [promotionFeatureEnabled, setPromotionFeatureEnabled] = useState(true);
   const [reviewFeatureEnabled, setReviewFeatureEnabled] = useState(true);
   const [bannerFeatureEnabled, setBannerFeatureEnabled] = useState(true);
+  const [aboutFeatureEnabled, setAboutFeatureEnabled] = useState(true);
+  const [aboutContentId, setAboutContentId] = useState('');
+  const [aboutContentValue, setAboutContentValue] = useState('');
+  const [aboutContentMessage, setAboutContentMessage] = useState('');
+  const [aboutContentError, setAboutContentError] = useState('');
+  const [showAboutPreview, setShowAboutPreview] = useState(false);
 
   const [orderStatusDrafts, setOrderStatusDrafts] = useState<Record<string, Order['status']>>({});
   const [stockDrafts, setStockDrafts] = useState<Record<string, string>>({});
@@ -963,6 +1001,9 @@ export default function StaffDashboardPage() {
   const [editCategorySizeType, setEditCategorySizeType] = useState<CategorySizeType>('none');
   const [editCategoryImageUrl, setEditCategoryImageUrl] = useState('');
   const [editCategoryImageName, setEditCategoryImageName] = useState('');
+  const [isCreateGroupPopupOpen, setIsCreateGroupPopupOpen] = useState(false);
+  const [newCategoryGroupLabel, setNewCategoryGroupLabel] = useState('');
+  const [creatingCategoryGroup, setCreatingCategoryGroup] = useState(false);
   const [newBannerTitle, setNewBannerTitle] = useState('');
   const [newBannerImageUrl, setNewBannerImageUrl] = useState('');
   const [newBannerImageName, setNewBannerImageName] = useState('');
@@ -1033,10 +1074,17 @@ export default function StaffDashboardPage() {
   const [shopVnbImporting, setShopVnbImporting] = useState(false);
   const [currentTimeMs, setCurrentTimeMs] = useState(() => Date.now());
   const [inventorySearchKeyword, setInventorySearchKeyword] = useState('');
+  const [inventoryPopupProductId, setInventoryPopupProductId] = useState<string | null>(null);
+  const [inventoryPopupSelectedSize, setInventoryPopupSelectedSize] = useState('');
+  const [inventoryPopupStockValue, setInventoryPopupStockValue] = useState('');
+  const STAFF_RESTRICTED_TABS: StaffTab[] = ['overview', 'employees', 'about_content'];
   const shouldComputeOverview = activeTab === 'overview';
   const newProductBasePrice = Number(newProduct.price || 0);
   const newProductDiscountPercent = Number(newProduct.discount_percent || 0);
   const newProductFinalPrice = computeDiscountedPrice(newProductBasePrice, newProductDiscountPercent);
+  const newProductFinalPriceDisplay = newProduct.price
+    ? formatVndInput(String(newProductFinalPrice))
+    : '';
   const editProductBasePrice = Number(editProduct.price || 0);
   const editProductDiscountPercent = Number(editProduct.discount_percent || 0);
   const editProductFinalPrice = computeDiscountedPrice(editProductBasePrice, editProductDiscountPercent);
@@ -1109,6 +1157,18 @@ export default function StaffDashboardPage() {
   }, [activeTab]);
 
   useEffect(() => {
+    if (!isStaff || isAdmin) return;
+    if (!STAFF_RESTRICTED_TABS.includes(activeTab)) return;
+    const fallbackTab: StaffTab = 'products_list';
+    setActiveTab(fallbackTab);
+    if (typeof window !== 'undefined') {
+      const nextParams = new URLSearchParams(window.location.search);
+      nextParams.set('tab', fallbackTab);
+      setSearchParams(nextParams, { replace: true });
+    }
+  }, [activeTab, isAdmin, isStaff, setSearchParams]);
+
+  useEffect(() => {
     if (authLoading) return;
     if (!user) {
       navigate('/login', { replace: true });
@@ -1148,10 +1208,12 @@ export default function StaffDashboardPage() {
         return;
       }
 
-      const [ordersRes, productsRes, categoriesRes, sectionsRes, branchesRes, bannersRes, customersRes, usersRes, supportRes, promotionsRes, reviewsRes] = await Promise.all([
+      const [ordersRes, productsRes, categoriesRes, categoryGroupsRes, siteContentRes, sectionsRes, branchesRes, bannersRes, customersRes, usersRes, supportRes, promotionsRes, reviewsRes] = await Promise.all([
         db.from('orders').select('*, order_items(*, products(*))').order('created_at', { ascending: false }),
         db.from('products').select('*, categories(*)').order('created_at', { ascending: false }),
         db.from('categories').select('*').order('created_at', { ascending: false }),
+        db.from('category_groups').select('*').order('created_at', { ascending: true }),
+        db.from('site_contents').select('*').eq('content_key', 'about_page').maybeSingle(),
         db.from('home_category_sections').select('*').order('sort_order', { ascending: true }),
         db.from('branches').select('*').order('name', { ascending: true }),
         db.from('banners').select('*').order('sort_order', { ascending: true }),
@@ -1184,6 +1246,28 @@ export default function StaffDashboardPage() {
       setOrders(nextOrders);
       setProducts((productsRes.data || []) as Product[]);
       setCategories((categoriesRes.data || []) as Category[]);
+      if (categoryGroupsRes.error) {
+        setCategoryGroups([]);
+      } else {
+        const nextGroups = ((categoryGroupsRes.data || []) as CategoryGroupItem[])
+          .filter(item => String(item.group_key || '').trim())
+          .map(item => ({
+            ...item,
+            group_key: String(item.group_key || '').trim(),
+            group_label: String(item.group_label || '').trim(),
+          }));
+        setCategoryGroups(nextGroups);
+      }
+      if (siteContentRes.error) {
+        setAboutFeatureEnabled(false);
+        setAboutContentId('');
+        setAboutContentValue('');
+      } else {
+        const aboutContent = (siteContentRes.data || null) as SiteContentItem | null;
+        setAboutFeatureEnabled(true);
+        setAboutContentId(String(aboutContent?.id || ''));
+        setAboutContentValue(String(aboutContent?.content_value || ''));
+      }
       if (!sectionsRes.error) {
         const nextSections = ((sectionsRes.data || []) as HomeCategorySection[])
           .filter(item => item && String(item.title || '').trim())
@@ -1465,6 +1549,29 @@ export default function StaffDashboardPage() {
     () => [...categories].sort((a, b) => String(a.name || '').localeCompare(String(b.name || ''), 'vi')),
     [categories],
   );
+  const categoryProductGroupOptions = useMemo(() => {
+    const optionMap = new Map<string, string>();
+    DEFAULT_CATEGORY_PRODUCT_GROUP_OPTIONS.forEach(option => {
+      optionMap.set(String(option.value), option.label);
+    });
+    categoryGroups.forEach(item => {
+      const key = String(item.group_key || '').trim();
+      const label = String(item.group_label || '').trim();
+      if (!key) return;
+      optionMap.set(key, label || formatGroupLabelFromKey(key));
+    });
+    categories.forEach(item => {
+      const key = String(item.product_group || '').trim();
+      if (!key || optionMap.has(key)) return;
+      optionMap.set(key, formatGroupLabelFromKey(key));
+    });
+    return Array.from(optionMap.entries()).map(([value, label]) => ({ value, label }));
+  }, [categories, categoryGroups]);
+  const getCategoryGroupLabel = (groupValue?: string | null) => {
+    const normalized = String(groupValue || '').trim();
+    if (!normalized) return 'Sản phẩm cầu lông';
+    return categoryProductGroupOptions.find(item => item.value === normalized)?.label || formatGroupLabelFromKey(normalized);
+  };
   const categoriesForNewSectionGroup = useMemo(
     () => categories.filter(item => (item.product_group || 'badminton') === newHomeSectionGroup),
     [categories, newHomeSectionGroup],
@@ -1748,15 +1855,15 @@ export default function StaffDashboardPage() {
     setOrders(prev => prev.map(order => (order.id === orderId ? { ...order, status: nextStatus } : order)));
   };
 
-  const handleUpdateStock = async (productId: string, sizeKey?: string | null) => {
+  const handleUpdateStock = async (productId: string, sizeKey?: string | null, overrideStockValue?: string) => {
     const draftKey = sizeKey ? `${productId}::${sizeKey}` : productId;
-    const stockValue = Number(stockDrafts[draftKey] || 0);
+    const stockValue = Number((overrideStockValue ?? stockDrafts[draftKey]) || 0);
     if (!Number.isFinite(stockValue) || stockValue < 0) {
       window.alert('Số lượng tồn kho không hợp lệ.');
-      return;
+      return false;
     }
     const product = products.find(item => item.id === productId);
-    if (!product) return;
+    if (!product) return false;
 
     let nextStock = Math.floor(stockValue);
     let nextSizeStockRaw: string | null = product.size_stock || null;
@@ -1781,13 +1888,55 @@ export default function StaffDashboardPage() {
     setSubmitting(false);
     if (updateError) {
       window.alert('Không thể cập nhật số lượng sản phẩm.');
-      return;
+      return false;
     }
     setProducts(prev => prev.map(item => (
       item.id === productId
         ? { ...item, stock: nextStock, size_stock: nextSizeStockRaw || undefined }
         : item
     )));
+    return true;
+  };
+
+  const openInventoryPopup = (product: Product) => {
+    const sizeOptions = getProductSizeOptions(product);
+    const defaultSize = inventorySizeDrafts[product.id] || sizeOptions[0] || '';
+    const sizeStockMap = parseSizeStockMap(product.size_stock);
+    const draftKey = defaultSize ? `${product.id}::${defaultSize}` : product.id;
+    const currentValue = stockDrafts[draftKey]
+      ?? (defaultSize ? String(sizeStockMap[defaultSize] ?? 0) : String(product.stock ?? 0));
+    setInventoryPopupProductId(product.id);
+    setInventoryPopupSelectedSize(defaultSize);
+    setInventoryPopupStockValue(currentValue);
+  };
+
+  const closeInventoryPopup = () => {
+    setInventoryPopupProductId(null);
+    setInventoryPopupSelectedSize('');
+    setInventoryPopupStockValue('');
+  };
+
+  const handleInventoryPopupSizeChange = (nextSize: string) => {
+    if (!inventoryPopupProductId) return;
+    const targetProduct = products.find(item => item.id === inventoryPopupProductId);
+    if (!targetProduct) return;
+    const sizeStockMap = parseSizeStockMap(targetProduct.size_stock);
+    const draftKey = nextSize ? `${targetProduct.id}::${nextSize}` : targetProduct.id;
+    const nextValue = stockDrafts[draftKey]
+      ?? (nextSize ? String(sizeStockMap[nextSize] ?? 0) : String(targetProduct.stock ?? 0));
+    setInventoryPopupSelectedSize(nextSize);
+    setInventoryPopupStockValue(nextValue);
+  };
+
+  const handleSaveInventoryFromPopup = async () => {
+    if (!inventoryPopupProductId) return;
+    const nextSize = inventoryPopupSelectedSize || null;
+    const draftKey = nextSize ? `${inventoryPopupProductId}::${nextSize}` : inventoryPopupProductId;
+    setStockDrafts(prev => ({ ...prev, [draftKey]: inventoryPopupStockValue }));
+    const success = await handleUpdateStock(inventoryPopupProductId, nextSize, inventoryPopupStockValue);
+    if (success) {
+      closeInventoryPopup();
+    }
   };
 
   const handleCategoryImageChange = async (event: React.ChangeEvent<HTMLInputElement>, target: 'new' | 'edit') => {
@@ -1855,6 +2004,113 @@ export default function StaffDashboardPage() {
     setNewCategorySizeType('none');
     setNewCategoryImageUrl('');
     setNewCategoryImageName('');
+  };
+
+  const closeCreateCategoryGroupPopup = () => {
+    setIsCreateGroupPopupOpen(false);
+    setNewCategoryGroupLabel('');
+  };
+
+  const handleCreateCategoryGroup = async () => {
+    const rawLabel = newCategoryGroupLabel.trim();
+    if (!rawLabel) {
+      window.alert('Vui lòng nhập tên nhóm.');
+      return;
+    }
+    const normalizedLabel = rawLabel.replace(/\s+/g, ' ');
+    const existingByLabel = categoryProductGroupOptions.some(
+      option => normalizeSearchKeyword(option.label) === normalizeSearchKeyword(normalizedLabel),
+    );
+    if (existingByLabel) {
+      window.alert('Nhóm này đã tồn tại.');
+      return;
+    }
+    const baseKey = slugify(normalizedLabel).slice(0, 30) || `group-${Date.now()}`;
+    const existingKeys = new Set(categoryProductGroupOptions.map(option => String(option.value)));
+    let uniqueKey = baseKey;
+    let suffix = 2;
+    while (existingKeys.has(uniqueKey)) {
+      uniqueKey = `${baseKey.slice(0, Math.max(1, 27))}-${suffix}`;
+      suffix += 1;
+    }
+
+    setCreatingCategoryGroup(true);
+    const { data, error: createError } = await db
+      .from('category_groups')
+      .insert({
+        group_key: uniqueKey,
+        group_label: normalizedLabel,
+      })
+      .select('*')
+      .maybeSingle();
+    setCreatingCategoryGroup(false);
+
+    if (createError || !data) {
+      window.alert(createError?.message || 'Không thể tạo nhóm mới.');
+      return;
+    }
+
+    const created = data as CategoryGroupItem;
+    setCategoryGroups(prev => [...prev, created]);
+    setNewCategoryProductGroup(created.group_key);
+    closeCreateCategoryGroupPopup();
+  };
+
+  const handleSaveAboutContent = async () => {
+    if (!isAdmin) {
+      setAboutContentError('Chỉ admin mới có quyền chỉnh sửa giới thiệu.');
+      return;
+    }
+    const nextContent = String(aboutContentValue || '').trim();
+    if (!nextContent) {
+      setAboutContentError('Nội dung giới thiệu không được để trống.');
+      return;
+    }
+
+    setAboutContentError('');
+    setAboutContentMessage('');
+    setSubmitting(true);
+
+    if (aboutContentId) {
+      const { data, error: updateError } = await db
+        .from('site_contents')
+        .update({
+          content_value: nextContent,
+          content_title: 'Giới thiệu',
+          updated_by: user?.id || null,
+        })
+        .eq('id', aboutContentId)
+        .select('*')
+        .maybeSingle();
+      setSubmitting(false);
+      if (updateError || !data) {
+        setAboutContentError(updateError?.message || 'Không thể lưu nội dung giới thiệu.');
+        return;
+      }
+      setAboutContentValue(String((data as SiteContentItem).content_value || ''));
+      setAboutContentMessage('Đã lưu nội dung giới thiệu.');
+      return;
+    }
+
+    const { data, error: createError } = await db
+      .from('site_contents')
+      .insert({
+        content_key: 'about_page',
+        content_title: 'Giới thiệu',
+        content_value: nextContent,
+        updated_by: user?.id || null,
+      })
+      .select('*')
+      .maybeSingle();
+    setSubmitting(false);
+    if (createError || !data) {
+      setAboutContentError(createError?.message || 'Không thể tạo nội dung giới thiệu.');
+      return;
+    }
+    const created = data as SiteContentItem;
+    setAboutContentId(String(created.id || ''));
+    setAboutContentValue(String(created.content_value || ''));
+    setAboutContentMessage('Đã tạo nội dung giới thiệu.');
   };
 
   const startEditCategory = (cat: Category) => {
@@ -1925,6 +2181,10 @@ export default function StaffDashboardPage() {
   };
 
   const handleDeleteCategory = async (categoryId: string) => {
+    if (!isAdmin) {
+      window.alert('Chỉ admin mới có quyền xóa danh mục.');
+      return;
+    }
     if (!window.confirm('Bạn có chắc muốn xóa danh mục này?')) return;
     setSubmitting(true);
     const { error: deleteError } = await db
@@ -1992,6 +2252,10 @@ export default function StaffDashboardPage() {
   };
 
   const handleDeleteHomeCategorySection = async (sectionId: string) => {
+    if (!isAdmin) {
+      window.alert('Chỉ admin mới có quyền xóa section.');
+      return;
+    }
     if (!window.confirm('Bạn có chắc muốn xóa section này khỏi trang chủ?')) return;
     setSubmitting(true);
     const { error: deleteError } = await db.from('home_category_sections').delete().eq('id', sectionId);
@@ -2264,6 +2528,10 @@ export default function StaffDashboardPage() {
   };
 
   const handleDeleteBanner = async (bannerId: string) => {
+    if (!isAdmin) {
+      window.alert('Chỉ admin mới có quyền xóa banner.');
+      return;
+    }
     if (!window.confirm('Bạn có chắc muốn xóa banner này?')) return;
     setSubmitting(true);
     const { error: deleteError } = await db.from('banners').delete().eq('id', bannerId);
@@ -2277,6 +2545,10 @@ export default function StaffDashboardPage() {
   };
 
   const handleDeleteAllBanners = async () => {
+    if (!isAdmin) {
+      window.alert('Chỉ admin mới có quyền xóa toàn bộ banner.');
+      return;
+    }
     if (banners.length === 0) return;
     if (!window.confirm('Xóa toàn bộ banner hiện có?')) return;
     const allIds = banners.map(item => item.id).filter(Boolean);
@@ -2466,10 +2738,38 @@ export default function StaffDashboardPage() {
 
   const removeGalleryImage = (target: 'new' | 'edit', imageUrl: string) => {
     if (target === 'new') {
-      setNewProductGalleryUrls(prev => prev.filter(url => url !== imageUrl));
+      setNewProductGalleryUrls(prev => {
+        const next = prev.filter(url => url !== imageUrl);
+        setNewProduct(prevProduct => {
+          if (prevProduct.image_url !== imageUrl) return prevProduct;
+          return {
+            ...prevProduct,
+            image_url: next[0] || '',
+          };
+        });
+        if (next.length === 0) {
+          setProductImageName('');
+        }
+        return next;
+      });
+      setNewProductGalleryNames([]);
       return;
     }
-    setEditProductGalleryUrls(prev => prev.filter(url => url !== imageUrl));
+    setEditProductGalleryUrls(prev => {
+      const next = prev.filter(url => url !== imageUrl);
+      setEditProduct(prevProduct => {
+        if (prevProduct.image_url !== imageUrl) return prevProduct;
+        return {
+          ...prevProduct,
+          image_url: next[0] || '',
+        };
+      });
+      if (next.length === 0) {
+        setEditProductImageName('');
+      }
+      return next;
+    });
+    setEditProductGalleryNames([]);
   };
 
   const handleImportShopVnbCatalog = async () => {
@@ -2625,6 +2925,12 @@ export default function StaffDashboardPage() {
     setEditProductImageName(product.image_url ? 'Ảnh hiện tại' : '');
     setEditProductGalleryUrls(parsedGallery);
     setEditProductGalleryNames(parsedGallery.map((_, index) => `Ảnh ${index + 1}`));
+  };
+
+  const handleQuickEditProduct = (product: Product) => {
+    setProducts(prev => [product, ...prev.filter(item => item.id !== product.id)]);
+    startEditProduct(product);
+    handleTabChange('products_list');
   };
 
   const cancelEditProduct = () => {
@@ -3020,15 +3326,19 @@ export default function StaffDashboardPage() {
     );
   }
 
-  const menuItems: Array<{ id: StaffTab; label: string; icon: any }> = [
+  const baseMenuItems: Array<{ id: StaffTab; label: string; icon: any }> = [
     { id: 'overview', label: 'Dashboard', icon: LayoutDashboard },
     { id: 'orders', label: 'Đơn hàng', icon: Package },
     { id: 'banners', label: 'Banner', icon: ImagePlus },
     { id: 'categories', label: 'Danh mục', icon: Tags },
+    { id: 'about_content', label: 'Giới thiệu', icon: FileText },
     { id: 'promotions', label: 'Khuyến mãi', icon: TicketPercent },
     { id: 'reviews', label: 'Đánh giá', icon: Star },
     { id: 'support', label: 'Hỗ trợ', icon: Headset },
   ];
+  const menuItems: Array<{ id: StaffTab; label: string; icon: any }> = isAdmin
+    ? baseMenuItems
+    : baseMenuItems.filter(item => !STAFF_RESTRICTED_TABS.includes(item.id));
 
   const productMenuItems: Array<{ id: StaffTab; label: string }> = [
     { id: 'products_list', label: 'Danh sách sản phẩm' },
@@ -3036,10 +3346,13 @@ export default function StaffDashboardPage() {
     { id: 'new_products', label: 'Sản phẩm mới' },
     { id: 'featured_products', label: 'Sản phẩm nổi bật' },
   ];
-  const accountMenuItems: Array<{ id: StaffTab; label: string }> = [
+  const baseAccountMenuItems: Array<{ id: StaffTab; label: string }> = [
     { id: 'customers', label: 'Khách hàng' },
     { id: 'employees', label: 'Nhân viên' },
   ];
+  const accountMenuItems: Array<{ id: StaffTab; label: string }> = isAdmin
+    ? baseAccountMenuItems
+    : baseAccountMenuItems.filter(item => item.id === 'customers');
 
   const tabLabelMap: Record<StaffTab, string> = {
     overview: 'Admin Dashboard',
@@ -3061,6 +3374,7 @@ export default function StaffDashboardPage() {
     support: 'Hỗ trợ',
     promotions: 'Khuyến mãi',
     reviews: 'Đánh giá',
+    about_content: 'Giới thiệu',
   };
 
   return (
@@ -3155,9 +3469,13 @@ export default function StaffDashboardPage() {
                   handleTabChange('customers');
                   return;
                 }
+                if (!isAdmin) {
+                  handleTabChange('customers');
+                  return;
+                }
                 setIsAccountMenuOpen(prev => !prev);
               }}
-              title="Tài khoản"
+              title={isAdmin ? 'Tài khoản' : 'Khách hàng'}
               className={`w-full flex items-center ${isSidebarOpen ? 'justify-between px-3' : 'justify-center px-0'} py-2.5 rounded-lg text-sm transition-colors ${
                 ACCOUNT_TABS.includes(activeTab)
                   ? 'bg-blue-600 text-white'
@@ -3166,9 +3484,9 @@ export default function StaffDashboardPage() {
             >
               <span className={`inline-flex items-center ${isSidebarOpen ? 'gap-3' : ''}`}>
                 <Users className="w-4 h-4" />
-                {isSidebarOpen && 'Tài khoản'}
+                {isSidebarOpen && (isAdmin ? 'Tài khoản' : 'Khách hàng')}
               </span>
-              {isSidebarOpen && <ChevronDown className={`w-4 h-4 transition-transform ${isAccountMenuOpen ? 'rotate-180' : ''}`} />}
+              {isSidebarOpen && isAdmin && <ChevronDown className={`w-4 h-4 transition-transform ${isAccountMenuOpen ? 'rotate-180' : ''}`} />}
             </button>
 
             {isSidebarOpen && isAccountMenuOpen && (
@@ -3219,15 +3537,15 @@ export default function StaffDashboardPage() {
         </aside>
 
         <main className="flex-1 min-w-0 p-4 sm:p-6 lg:p-8">
-          <div className="bg-white border border-slate-200 rounded-2xl px-4 py-3 sm:px-6 flex flex-wrap items-center gap-3 justify-between mb-6">
-            <div>
+          <div className="bg-white border border-slate-200 rounded-2xl px-4 py-2.5 sm:px-6 flex flex-wrap items-center gap-3 justify-between mb-6">
+            <div className="flex items-center gap-2">
               <h1 className="text-xl sm:text-2xl font-bold text-slate-900">
                 {tabLabelMap[activeTab]}
               </h1>
               <button
                 type="button"
                 onClick={() => setIsSidebarOpen(prev => !prev)}
-                className="mt-2 inline-flex items-center justify-center w-8 h-8 rounded-md border border-slate-300 text-slate-700 bg-white hover:bg-slate-50 transition-colors"
+                className="inline-flex items-center justify-center w-8 h-8 rounded-md border border-slate-300 text-slate-700 bg-white hover:bg-slate-50 transition-colors"
                 aria-label={isSidebarOpen ? 'Thu gọn thanh công cụ' : 'Mở rộng thanh công cụ'}
               >
                 <SidebarToggleGlyph isOpen={isSidebarOpen} />
@@ -3496,8 +3814,7 @@ export default function StaffDashboardPage() {
             <div className="bg-white border border-slate-200 rounded-2xl p-5 space-y-4">
               {activeTab === 'products_list' && (
                 <>
-                  <div className="flex items-center justify-between gap-3">
-                    <h2 className="text-lg font-bold text-slate-900">Danh sách sản phẩm</h2>
+                  <div className="flex items-center justify-end gap-3">
                     <button
                       type="button"
                       onClick={handleImportShopVnbCatalog}
@@ -3512,155 +3829,158 @@ export default function StaffDashboardPage() {
                       <h3 className="font-semibold text-slate-900">Thêm sản phẩm mới</h3>
                     </div>
 
-                    <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-5 gap-3">
-                      <input value={newProduct.name} onChange={event => setNewProduct(prev => ({ ...prev, name: event.target.value }))} placeholder="Tên sản phẩm *" className="h-10 px-3 border border-slate-200 rounded-lg text-sm bg-white" />
-                      <input value={newProduct.slug} onChange={event => setNewProduct(prev => ({ ...prev, slug: event.target.value }))} placeholder="Slug (để trống tự tạo)" className="h-10 px-3 border border-slate-200 rounded-lg text-sm bg-white" />
-                      <select
-                        value={newProduct.category_id}
-                        onChange={event => {
-                          const nextCategoryId = event.target.value;
-                          const nextCategory = categories.find(item => item.id === nextCategoryId);
-                          const nextSizeType = (nextCategory?.size_type || 'none') as CategorySizeType;
-                          const allowedSizes = getAllowedSizesByType(nextSizeType).join(', ');
-                          setNewProduct(prev => ({
-                            ...prev,
-                            category_id: nextCategoryId,
-                            size_type: nextSizeType !== 'none' ? nextSizeType : prev.size_type,
-                            size_options: allowedSizes || prev.size_options,
-                          }));
-                        }}
-                        className="h-10 px-3 border border-slate-200 rounded-lg text-sm bg-white"
-                      >
-                        <option value="">Chọn danh mục *</option>
-                        {categories.map(category => <option key={category.id} value={category.id}>{category.name}</option>)}
-                      </select>
-                      <input value={newProduct.brand} onChange={event => setNewProduct(prev => ({ ...prev, brand: event.target.value }))} placeholder="Nhãn hiệu" className="h-10 px-3 border border-slate-200 rounded-lg text-sm bg-white" />
-                      <div className="h-10 px-3 border border-slate-200 rounded-lg text-xs bg-white flex items-center text-slate-500">
-                        {normalizeCommaValues(newProduct.branch_name).length > 0
-                          ? `Chi nhánh đã chọn: ${normalizeCommaValues(newProduct.branch_name).join(', ')}`
-                          : 'Chưa chọn chi nhánh'}
-                      </div>
-                    </div>
-
-                    <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
-                      <input
-                        type="text"
-                        inputMode="numeric"
-                        value={formatVndInput(newProduct.price)}
-                        onChange={event => setNewProduct(prev => ({ ...prev, price: normalizeVndInput(event.target.value) }))}
-                        placeholder="Giá gốc * (VNĐ)"
-                        className="h-10 px-3 border border-slate-200 rounded-lg text-sm bg-white"
-                      />
-                      <input
-                        type="number"
-                        min={0}
-                        max={99}
-                        value={newProduct.discount_percent}
-                        onChange={event => setNewProduct(prev => ({ ...prev, discount_percent: normalizePercentInput(event.target.value) }))}
-                        placeholder="Giảm giá (%)"
-                        className="h-10 px-3 border border-slate-200 rounded-lg text-sm bg-white"
-                      />
-                      <input
-                        type="text"
-                        readOnly
-                        value={formatVndInput(String(newProductFinalPrice))}
-                        placeholder="Giá bán sau giảm (VNĐ)"
-                        className="h-10 px-3 border border-slate-200 rounded-lg text-sm bg-slate-100 text-slate-700"
-                      />
-                      <input type="number" min={0} value={newProduct.stock} onChange={event => setNewProduct(prev => ({ ...prev, stock: event.target.value }))} placeholder="Tồn kho *" className="h-10 px-3 border border-slate-200 rounded-lg text-sm bg-white" />
-                    </div>
-
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                      <div className="h-10 px-3 border border-slate-200 rounded-lg text-sm bg-white flex items-center justify-between gap-3">
-                        <label className="inline-flex items-center gap-2 text-blue-600 font-medium cursor-pointer">
-                          <span>Chọn ảnh từ máy</span>
+                    <div className="grid grid-cols-1 xl:grid-cols-3 gap-4">
+                      <div className="border border-slate-200 rounded-xl bg-white p-4 space-y-3">
+                        <h4 className="text-sm font-semibold text-slate-900">Thông tin cơ bản</h4>
+                        <input value={newProduct.name} onChange={event => setNewProduct(prev => ({ ...prev, name: event.target.value }))} placeholder="Tên sản phẩm *" className="h-10 px-3 border border-slate-200 rounded-lg text-sm bg-white" />
+                        <input value={newProduct.slug} onChange={event => setNewProduct(prev => ({ ...prev, slug: event.target.value }))} placeholder="Slug (để trống tự tạo)" className="h-10 px-3 border border-slate-200 rounded-lg text-sm bg-white" />
+                        <div className="grid grid-cols-2 gap-3">
                           <input
-                            type="file"
-                            accept="image/*"
-                            onChange={handleProductImageChange}
-                            className="hidden"
+                            type="text"
+                            inputMode="numeric"
+                            value={formatVndInput(newProduct.price)}
+                            onChange={event => setNewProduct(prev => ({ ...prev, price: normalizeVndInput(event.target.value) }))}
+                            placeholder="Giá gốc * (VNĐ)"
+                            className="h-10 px-3 border border-slate-200 rounded-lg text-sm bg-white"
                           />
-                        </label>
-                        <span className="text-xs text-slate-500 truncate">
-                          {productImageName || 'Chưa chọn ảnh'}
-                        </span>
-                      </div>
-                      <textarea rows={2} value={newProduct.description} onChange={event => setNewProduct(prev => ({ ...prev, description: event.target.value }))} placeholder="Mô tả sản phẩm" className="px-3 py-2 border border-slate-200 rounded-lg text-sm bg-white resize-none" />
-                    </div>
-                    <div className="space-y-2">
-                      <label className="inline-flex items-center gap-2 text-blue-600 font-medium cursor-pointer text-sm">
-                        <ImagePlus className="w-4 h-4" />
-                        <span>Thêm ảnh phụ (chọn nhiều ảnh)</span>
-                        <input
-                          type="file"
-                          accept="image/*"
-                          multiple
-                          onChange={event => handleProductGalleryChange(event, 'new')}
-                          className="hidden"
-                        />
-                      </label>
-                      {newProductGalleryUrls.length > 0 && (
-                        <div className="flex flex-wrap gap-2">
-                          {newProductGalleryUrls.map((url, index) => (
-                            <div key={url} className="relative">
-                              <img src={url} alt={`gallery-${index}`} className="w-14 h-14 rounded-lg object-cover border border-slate-200" />
-                              <button
-                                type="button"
-                                onClick={() => removeGalleryImage('new', url)}
-                                className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-rose-500 text-white text-[10px] leading-4"
-                                title="Xóa ảnh"
-                              >
-                                x
-                              </button>
-                            </div>
-                          ))}
+                          <input type="number" min={0} value={newProduct.stock} onChange={event => setNewProduct(prev => ({ ...prev, stock: event.target.value }))} placeholder="Tồn kho *" className="h-10 px-3 border border-slate-200 rounded-lg text-sm bg-white" />
                         </div>
-                      )}
-                      {newProductGalleryNames.length > 0 && (
-                        <p className="text-xs text-slate-500 truncate">{newProductGalleryNames.join(' | ')}</p>
-                      )}
-                    </div>
-
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                      <select
-                        value={newProduct.size_type}
-                        onChange={event => setNewProduct(prev => ({ ...prev, size_type: event.target.value as CategorySizeType }))}
-                        className="h-10 px-3 border border-slate-200 rounded-lg text-sm bg-white"
-                      >
-                        <option value="none">Loại size: Không áp dụng</option>
-                        <option value="shoes">1. Giày dép</option>
-                        <option value="apparel">2. Quần áo</option>
-                      </select>
-                      <div className="h-10 px-3 border border-slate-200 rounded-lg text-xs bg-white flex items-center text-slate-500">
-                        {selectedProductSizeType === 'shoes' && 'Giày dép: chỉ size số 36-42'}
-                        {selectedProductSizeType === 'apparel' && 'Quần áo: chỉ size chữ S, M, L, XL, 2XL'}
-                        {selectedProductSizeType === 'none' && 'Chưa áp dụng quy tắc size'}
+                        <div className="grid grid-cols-2 gap-3">
+                          <input
+                            type="number"
+                            min={0}
+                            max={99}
+                            value={newProduct.discount_percent}
+                            onChange={event => setNewProduct(prev => ({ ...prev, discount_percent: normalizePercentInput(event.target.value) }))}
+                            placeholder="Giảm giá (%)"
+                            className="h-10 px-3 border border-slate-200 rounded-lg text-sm bg-white"
+                          />
+                          <input
+                            type="text"
+                            readOnly
+                            value={newProductFinalPriceDisplay}
+                            placeholder="Giá bán sau giảm"
+                            className="h-10 w-full px-3 border border-slate-200 rounded-lg text-sm bg-slate-100 text-slate-700"
+                          />
+                        </div>
+                        <select
+                          value={newProduct.category_id}
+                          onChange={event => {
+                            const nextCategoryId = event.target.value;
+                            const nextCategory = categories.find(item => item.id === nextCategoryId);
+                            const nextSizeType = (nextCategory?.size_type || 'none') as CategorySizeType;
+                            const allowedSizes = getAllowedSizesByType(nextSizeType).join(', ');
+                            setNewProduct(prev => ({
+                              ...prev,
+                              category_id: nextCategoryId,
+                              size_type: nextSizeType !== 'none' ? nextSizeType : prev.size_type,
+                              size_options: allowedSizes || prev.size_options,
+                            }));
+                          }}
+                          className="h-10 px-3 border border-slate-200 rounded-lg text-sm bg-white"
+                        >
+                          <option value="">Chọn danh mục *</option>
+                          {categories.map(category => <option key={category.id} value={category.id}>{category.name}</option>)}
+                        </select>
+                        <input value={newProduct.brand} onChange={event => setNewProduct(prev => ({ ...prev, brand: event.target.value }))} placeholder="Nhãn hiệu" className="h-10 px-3 border border-slate-200 rounded-lg text-sm bg-white" />
+                        <div className="h-10 px-3 border border-slate-200 rounded-lg text-xs bg-white flex items-center text-slate-500">
+                          {normalizeCommaValues(newProduct.branch_name).length > 0
+                            ? `Chi nhánh đã chọn: ${normalizeCommaValues(newProduct.branch_name).join(', ')}`
+                            : 'Chưa chọn chi nhánh'}
+                        </div>
                       </div>
-                    </div>
 
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                      <input
-                        value={newProduct.color_options}
-                        onChange={event => setNewProduct(prev => ({ ...prev, color_options: event.target.value }))}
-                        placeholder="Màu sắc (VD: Đen/Đỏ, Xanh Navy, Xám/Bạc)"
-                        className="h-10 px-3 border border-slate-200 rounded-lg text-sm bg-white"
-                      />
-                      <input
-                        value={newProduct.size_options}
-                        onChange={event => setNewProduct(prev => ({ ...prev, size_options: event.target.value }))}
-                        placeholder="Size (tự theo danh mục)"
-                        className="h-10 px-3 border border-slate-200 rounded-lg text-sm bg-white"
-                        disabled={selectedProductSizeType !== 'none'}
-                      />
-                    </div>
-                    <p className="text-xs text-slate-500">
-                      {selectedProductSizeType === 'shoes' && 'Sản phẩm giày dép chỉ nhận size số: 36-42.'}
-                      {selectedProductSizeType === 'apparel' && 'Sản phẩm quần áo chỉ nhận size chữ: S, M, L, XL, 2XL.'}
-                      {selectedProductSizeType === 'none' && 'Chọn loại size 1 hoặc 2 để hệ thống tự chuẩn hóa size.'}
-                    </p>
+                      <div className="border border-slate-200 rounded-xl bg-white p-4 space-y-3">
+                        <h4 className="text-sm font-semibold text-slate-900">Ảnh & mô tả</h4>
+                        <div className="h-10 px-3 border border-slate-200 rounded-lg text-sm bg-white flex items-center justify-between gap-3">
+                          <label className="inline-flex items-center gap-2 text-blue-600 font-medium cursor-pointer">
+                            <span>Chọn ảnh từ máy</span>
+                            <input
+                              type="file"
+                              accept="image/*"
+                              onChange={handleProductImageChange}
+                              className="hidden"
+                            />
+                          </label>
+                          <span className="text-xs text-slate-500 truncate">
+                            {productImageName || 'Chưa chọn ảnh'}
+                          </span>
+                        </div>
+                        <div className="space-y-2">
+                          <label className="inline-flex items-center gap-2 text-blue-600 font-medium cursor-pointer text-sm">
+                            <ImagePlus className="w-4 h-4" />
+                            <span>Thêm ảnh phụ (chọn nhiều ảnh)</span>
+                            <input
+                              type="file"
+                              accept="image/*"
+                              multiple
+                              onChange={event => handleProductGalleryChange(event, 'new')}
+                              className="hidden"
+                            />
+                          </label>
+                          {newProductGalleryUrls.length > 0 && (
+                            <div className="flex flex-wrap gap-2">
+                              {newProductGalleryUrls.map((url, index) => (
+                                <div key={url} className="relative">
+                                  <img src={url} alt={`gallery-${index}`} className="w-14 h-14 rounded-lg object-cover border border-slate-200" />
+                                  <button
+                                    type="button"
+                                    onClick={() => removeGalleryImage('new', url)}
+                                    className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-rose-500 text-white text-[10px] leading-4"
+                                    title="Xóa ảnh"
+                                  >
+                                    x
+                                  </button>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                          {newProductGalleryNames.length > 0 && (
+                            <p className="text-xs text-slate-500 truncate">{newProductGalleryNames.join(' | ')}</p>
+                          )}
+                        </div>
+                        <textarea rows={8} value={newProduct.description} onChange={event => setNewProduct(prev => ({ ...prev, description: event.target.value }))} placeholder="Mô tả sản phẩm" className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm bg-white resize-none" />
+                      </div>
 
-                    <div className="grid grid-cols-1 xl:grid-cols-2 gap-3">
-                      <div className="border border-slate-200 rounded-lg bg-white p-3 space-y-2 xl:col-span-2">
+                      <div className="space-y-3">
+                        <div className="border border-slate-200 rounded-xl bg-white p-4 space-y-3">
+                          <h4 className="text-sm font-semibold text-slate-900">Thuộc tính</h4>
+                          <select
+                            value={newProduct.size_type}
+                            onChange={event => setNewProduct(prev => ({ ...prev, size_type: event.target.value as CategorySizeType }))}
+                            className="h-10 px-3 border border-slate-200 rounded-lg text-sm bg-white"
+                          >
+                            <option value="none">Loại size: Không áp dụng</option>
+                            <option value="shoes">1. Giày dép</option>
+                            <option value="apparel">2. Quần áo</option>
+                          </select>
+                          <div className="h-10 px-3 border border-slate-200 rounded-lg text-xs bg-white flex items-center text-slate-500">
+                            {selectedProductSizeType === 'shoes' && 'Giày dép: chỉ size số 36-42'}
+                            {selectedProductSizeType === 'apparel' && 'Quần áo: chỉ size chữ S, M, L, XL, 2XL'}
+                            {selectedProductSizeType === 'none' && 'Chưa áp dụng quy tắc size'}
+                          </div>
+                          <input
+                            value={newProduct.color_options}
+                            onChange={event => setNewProduct(prev => ({ ...prev, color_options: event.target.value }))}
+                            placeholder="Màu sắc ( / )"
+                            className="h-10 px-3 border border-slate-200 rounded-lg text-sm bg-white"
+                          />
+                          <input
+                            value={newProduct.size_options}
+                            onChange={event => setNewProduct(prev => ({ ...prev, size_options: event.target.value }))}
+                            placeholder="Size (tự theo danh mục)"
+                            className="h-10 px-3 border border-slate-200 rounded-lg text-sm bg-white"
+                            disabled={selectedProductSizeType !== 'none'}
+                          />
+                          <p className="text-xs text-slate-500">
+                            {selectedProductSizeType === 'shoes' && 'Sản phẩm giày dép chỉ nhận size số: 36-42.'}
+                            {selectedProductSizeType === 'apparel' && 'Sản phẩm quần áo chỉ nhận size chữ: S, M, L, XL, 2XL.'}
+                            {selectedProductSizeType === 'none' && 'Chọn loại size 1 hoặc 2 để hệ thống tự chuẩn hóa size.'}
+                          </p>
+                        </div>
+
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                      <div className="border border-slate-200 rounded-lg bg-white p-3 space-y-2 md:col-span-2">
                         <p className="text-xs font-semibold text-slate-700 uppercase">Chi nhánh</p>
                         <div className="flex flex-wrap gap-2">
                           {branches.map(branch => (
@@ -3742,7 +4062,7 @@ export default function StaffDashboardPage() {
                               ))}
                             </div>
                           </div>
-                          <div className="border border-slate-200 rounded-lg bg-white p-3 space-y-2 xl:col-span-2">
+                          <div className="border border-slate-200 rounded-lg bg-white p-3 space-y-2 md:col-span-2">
                             <p className="text-xs font-semibold text-slate-700 uppercase">Phân khúc</p>
                             <div className="flex flex-wrap gap-2">
                               {SEGMENT_OPTIONS.map(option => (
@@ -3766,6 +4086,8 @@ export default function StaffDashboardPage() {
                         Với quần áo, hệ thống tập trung bộ lọc theo mức giá, thương hiệu, chi nhánh và size (S/M/L/XL/2XL), không hiển thị các thuộc tính riêng của giày.
                       </p>
                     )}
+                      </div>
+                    </div>
 
                     <p className="text-xs text-slate-500">
                       Sản phẩm mới mặc định chưa nổi bật. Muốn gắn nổi bật, hãy vào mục Sửa sản phẩm.
@@ -3784,10 +4106,30 @@ export default function StaffDashboardPage() {
 
                   <div className="space-y-3">
                     {visibleProducts.map(product => (
-                      <div key={product.id} className="border border-slate-100 rounded-xl p-4 space-y-3">
+                      <div key={product.id} className={editingProductId === product.id ? '' : 'border border-slate-100 rounded-xl p-4 space-y-3'}>
                         {editingProductId === product.id ? (
-                          <div className="space-y-3">
-                            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+                            <button
+                              type="button"
+                              onClick={cancelEditProduct}
+                              className="absolute inset-0 bg-slate-900/50"
+                              aria-label="Đóng popup chỉnh sửa sản phẩm"
+                            />
+                            <div className="relative w-full max-w-5xl max-h-[90vh] overflow-y-auto rounded-2xl bg-white shadow-2xl border border-slate-200 p-4 sm:p-5 space-y-3">
+                              <div className="flex items-start justify-between gap-3">
+                                <div>
+                                  <h3 className="text-lg font-bold text-slate-900">Chỉnh sửa sản phẩm</h3>
+                                  <p className="text-sm text-slate-500 mt-1">{product.name}</p>
+                                </div>
+                                <button
+                                  type="button"
+                                  onClick={cancelEditProduct}
+                                  className="w-8 h-8 inline-flex items-center justify-center rounded-md text-slate-500 hover:bg-slate-100"
+                                >
+                                  <X className="w-4 h-4" />
+                                </button>
+                              </div>
+                              <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
                               <input
                                 value={editProduct.name}
                                 onChange={event => setEditProduct(prev => ({ ...prev, name: event.target.value }))}
@@ -3809,7 +4151,7 @@ export default function StaffDashboardPage() {
                                 {categories.map(category => <option key={category.id} value={category.id}>{category.name}</option>)}
                               </select>
                             </div>
-                            <div className="grid grid-cols-1 md:grid-cols-5 gap-3">
+                              <div className="grid grid-cols-1 md:grid-cols-5 gap-3">
                               <input
                                 value={editProduct.brand}
                                 onChange={event => setEditProduct(prev => ({ ...prev, brand: event.target.value }))}
@@ -3846,7 +4188,7 @@ export default function StaffDashboardPage() {
                                 className="h-10 px-3 border border-slate-200 rounded-lg text-sm bg-slate-100 text-slate-700"
                               />
                             </div>
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                               <input
                                 type="number"
                                 min={0}
@@ -3867,7 +4209,7 @@ export default function StaffDashboardPage() {
                                 {editProduct.featured ? 'Đang là sản phẩm nổi bật' : 'Đặt làm sản phẩm nổi bật'}
                               </button>
                             </div>
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                               <select
                                 value={editProduct.size_type}
                                 onChange={event => setEditProduct(prev => ({ ...prev, size_type: event.target.value as CategorySizeType }))}
@@ -3885,7 +4227,7 @@ export default function StaffDashboardPage() {
                                 disabled={editProduct.size_type !== 'none'}
                               />
                             </div>
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                               <input
                                 value={editProduct.color_options}
                                 onChange={event => setEditProduct(prev => ({ ...prev, color_options: event.target.value }))}
@@ -3900,7 +4242,7 @@ export default function StaffDashboardPage() {
                                 <span className="text-xs text-slate-500 truncate">{editProductImageName || 'Giữ ảnh hiện tại'}</span>
                               </div>
                             </div>
-                            <div className="grid grid-cols-1 xl:grid-cols-2 gap-3">
+                              <div className="grid grid-cols-1 xl:grid-cols-2 gap-3">
                               <div className="border border-slate-200 rounded-lg bg-white p-3 space-y-2 xl:col-span-2">
                                 <p className="text-xs font-semibold text-slate-700 uppercase">Chi nhánh</p>
                                 <div className="flex flex-wrap gap-2">
@@ -4002,12 +4344,12 @@ export default function StaffDashboardPage() {
                                 </>
                               )}
                             </div>
-                            {editProduct.size_type === 'apparel' && (
+                              {editProduct.size_type === 'apparel' && (
                               <p className="text-xs text-slate-500">
                                 Với quần áo, hệ thống tập trung bộ lọc theo mức giá, thương hiệu, chi nhánh và size (S/M/L/XL/2XL), không hiển thị các thuộc tính riêng của giày.
                               </p>
-                            )}
-                            <div className="space-y-2">
+                              )}
+                              <div className="space-y-2">
                               <label className="inline-flex items-center gap-2 text-blue-600 font-medium cursor-pointer text-sm">
                                 <ImagePlus className="w-4 h-4" />
                                 <span>Thêm ảnh phụ (chọn nhiều ảnh)</span>
@@ -4039,16 +4381,17 @@ export default function StaffDashboardPage() {
                               {editProductGalleryNames.length > 0 && (
                                 <p className="text-xs text-slate-500 truncate">{editProductGalleryNames.join(' | ')}</p>
                               )}
-                            </div>
-                            <textarea
+                              </div>
+                              <textarea
                               rows={2}
                               value={editProduct.description}
                               onChange={event => setEditProduct(prev => ({ ...prev, description: event.target.value }))}
                               placeholder="Mô tả"
                               className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm resize-none"
-                            />
-                            <div className="flex items-center gap-2">
+                              />
+                              <div className="flex items-center gap-2 justify-end">
                               <button
+                                type="button"
                                 onClick={() => handleUpdateProduct(product.id)}
                                 disabled={submitting}
                                 className="px-4 py-2 rounded-lg text-sm font-medium text-white bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50"
@@ -4057,16 +4400,33 @@ export default function StaffDashboardPage() {
                                 Lưu
                               </button>
                               <button
+                                type="button"
                                 onClick={cancelEditProduct}
                                 className="px-4 py-2 rounded-lg text-sm font-medium text-slate-600 bg-slate-100 hover:bg-slate-200"
                               >
                                 <X className="w-4 h-4 inline mr-1" />
                                 Hủy
                               </button>
+                                {isAdmin && (
+                                  <button
+                                    type="button"
+                                    onClick={() => handleDeleteProduct(product.id)}
+                                    disabled={submitting}
+                                    className="px-4 py-2 rounded-lg text-sm font-medium text-white bg-rose-600 hover:bg-rose-700 disabled:opacity-50"
+                                  >
+                                    <Trash2 className="w-4 h-4 inline mr-1" />
+                                    Xóa
+                                  </button>
+                                )}
+                              </div>
                             </div>
                           </div>
                         ) : (
-                          <div className="flex flex-wrap items-center justify-between gap-3">
+                          <button
+                            type="button"
+                            onClick={() => startEditProduct(product)}
+                            className="w-full text-left flex flex-wrap items-center justify-between gap-3 hover:bg-blue-50/30 rounded-lg p-1 transition-colors"
+                          >
                             <div className="flex items-center gap-3 min-w-0">
                               {product.image_url ? (
                                 <img
@@ -4084,27 +4444,13 @@ export default function StaffDashboardPage() {
                                 <p className="text-sm text-slate-500">{product.brand} - {formatPrice(product.price)}</p>
                               </div>
                             </div>
-                            <div className="flex items-center gap-3">
+                            <div className="flex items-center gap-3 text-sm text-slate-500">
                               <div className="text-sm text-slate-600">
                                 Tồn kho: <span className="font-semibold text-slate-900">{product.stock}</span>
                               </div>
-                              <button
-                                onClick={() => startEditProduct(product)}
-                                className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium text-blue-700 bg-blue-50 hover:bg-blue-100"
-                              >
-                                <Pencil className="w-4 h-4" />
-                                Sửa
-                              </button>
-                              <button
-                                onClick={() => handleDeleteProduct(product.id)}
-                                disabled={submitting}
-                                className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium text-rose-700 bg-rose-50 hover:bg-rose-100 disabled:opacity-50"
-                              >
-                                <Trash2 className="w-4 h-4" />
-                                Xóa
-                              </button>
+                              <span>Bấm để chỉnh sửa</span>
                             </div>
-                          </div>
+                          </button>
                         )}
                       </div>
                     ))}
@@ -4114,7 +4460,6 @@ export default function StaffDashboardPage() {
 
               {activeTab === 'inventory' && (
                 <>
-                  <h2 className="text-lg font-bold text-slate-900">Quản lý kho</h2>
                   <div className="max-w-md">
                     <input
                       type="text"
@@ -4127,13 +4472,13 @@ export default function StaffDashboardPage() {
                   <div className="space-y-3">
                     {visibleInventoryProducts.map(product => {
                       const sizeOptions = getProductSizeOptions(product);
-                      const selectedSize = inventorySizeDrafts[product.id] || sizeOptions[0] || '';
-                      const sizeStockMap = parseSizeStockMap(product.size_stock);
-                      const draftKey = selectedSize ? `${product.id}::${selectedSize}` : product.id;
-                      const stockValue = stockDrafts[draftKey]
-                        ?? (selectedSize ? String(sizeStockMap[selectedSize] ?? 0) : String(product.stock));
                       return (
-                        <div key={product.id} className="border border-slate-100 rounded-xl p-4 flex flex-wrap items-center justify-between gap-3">
+                        <button
+                          key={product.id}
+                          type="button"
+                          onClick={() => openInventoryPopup(product)}
+                          className="w-full border border-slate-100 rounded-xl p-4 flex flex-wrap items-center justify-between gap-3 text-left hover:border-blue-200 hover:bg-blue-50/30 transition-colors"
+                        >
                           <div className="flex items-center gap-3 min-w-0">
                             {product.image_url ? (
                               <img
@@ -4154,34 +4499,10 @@ export default function StaffDashboardPage() {
                               )}
                             </div>
                           </div>
-                          <div className="flex items-center gap-2">
-                            {sizeOptions.length > 0 && (
-                              <select
-                                value={selectedSize}
-                                onChange={event => setInventorySizeDrafts(prev => ({ ...prev, [product.id]: event.target.value }))}
-                                className="h-10 px-3 border border-slate-200 rounded-lg text-sm bg-white"
-                              >
-                                {sizeOptions.map(size => (
-                                  <option key={size} value={size}>Size {size}</option>
-                                ))}
-                              </select>
-                            )}
-                            <input
-                              type="number"
-                              min={0}
-                              value={stockValue}
-                              onChange={event => setStockDrafts(prev => ({ ...prev, [draftKey]: event.target.value }))}
-                              className="w-28 h-10 px-3 border border-slate-200 rounded-lg text-sm"
-                            />
-                            <button
-                              onClick={() => handleUpdateStock(product.id, selectedSize || null)}
-                              disabled={submitting}
-                              className="px-3 py-2 rounded-lg text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 disabled:opacity-50"
-                            >
-                              Lưu tồn kho
-                            </button>
+                          <div className="text-sm text-slate-500">
+                            Bấm để chỉnh tồn kho
                           </div>
-                        </div>
+                        </button>
                       );
                     })}
                     {visibleInventoryProducts.length === 0 && (
@@ -4190,13 +4511,99 @@ export default function StaffDashboardPage() {
                       </div>
                     )}
                   </div>
+                  {inventoryPopupProductId && (() => {
+                    const targetProduct = products.find(item => item.id === inventoryPopupProductId);
+                    if (!targetProduct) return null;
+                    const sizeOptions = getProductSizeOptions(targetProduct);
+                    const sizeStockMap = parseSizeStockMap(targetProduct.size_stock);
+                    const currentStockValue = inventoryPopupSelectedSize
+                      ? Number(sizeStockMap[inventoryPopupSelectedSize] ?? 0)
+                      : Number(targetProduct.stock ?? 0);
+                    return (
+                      <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+                        <button
+                          type="button"
+                          onClick={closeInventoryPopup}
+                          className="absolute inset-0 bg-slate-900/50"
+                          aria-label="Đóng popup"
+                        />
+                        <div className="relative w-full max-w-lg rounded-2xl bg-white shadow-2xl border border-slate-200 p-5 space-y-4">
+                          <div className="flex items-start justify-between gap-3">
+                            <div>
+                              <h3 className="text-lg font-bold text-slate-900">Chỉnh sửa tồn kho</h3>
+                              <p className="text-sm text-slate-500 mt-1">{targetProduct.name}</p>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={closeInventoryPopup}
+                              className="w-8 h-8 inline-flex items-center justify-center rounded-md text-slate-500 hover:bg-slate-100"
+                            >
+                              <X className="w-4 h-4" />
+                            </button>
+                          </div>
+                          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                            <div className="space-y-1">
+                              <p className="text-xs font-semibold text-slate-600 uppercase">Size</p>
+                              {sizeOptions.length > 0 ? (
+                                <select
+                                  value={inventoryPopupSelectedSize}
+                                  onChange={event => handleInventoryPopupSizeChange(event.target.value)}
+                                  className="h-10 w-full px-3 border border-slate-200 rounded-lg text-sm bg-white"
+                                >
+                                  {sizeOptions.map(size => (
+                                    <option key={size} value={size}>Size {size}</option>
+                                  ))}
+                                </select>
+                              ) : (
+                                <div className="h-10 px-3 border border-slate-200 rounded-lg text-sm bg-slate-50 flex items-center text-slate-600">
+                                  Không áp dụng
+                                </div>
+                              )}
+                            </div>
+                            <div className="space-y-1">
+                              <p className="text-xs font-semibold text-slate-600 uppercase">Tồn kho hiện tại</p>
+                              <div className="h-10 w-full px-3 border border-slate-200 rounded-lg text-sm bg-slate-50 flex items-center font-semibold text-slate-700">
+                                {Math.max(0, Math.floor(Number.isFinite(currentStockValue) ? currentStockValue : 0))}
+                              </div>
+                            </div>
+                            <div className="space-y-1">
+                              <p className="text-xs font-semibold text-slate-600 uppercase">Số lượng tồn kho</p>
+                              <input
+                                type="number"
+                                min={0}
+                                value={inventoryPopupStockValue}
+                                onChange={event => setInventoryPopupStockValue(event.target.value)}
+                                className="h-10 w-full px-3 border border-slate-200 rounded-lg text-sm"
+                              />
+                            </div>
+                          </div>
+                          <div className="flex items-center justify-end gap-2 pt-2">
+                            <button
+                              type="button"
+                              onClick={closeInventoryPopup}
+                              className="h-10 px-4 rounded-lg text-sm font-medium text-slate-700 bg-slate-100 hover:bg-slate-200"
+                            >
+                              Hủy
+                            </button>
+                            <button
+                              type="button"
+                              onClick={handleSaveInventoryFromPopup}
+                              disabled={submitting}
+                              className="h-10 px-4 rounded-lg text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 disabled:opacity-50"
+                            >
+                              {submitting ? 'Đang lưu...' : 'Lưu tồn kho'}
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })()}
                 </>
               )}
 
               {activeTab === 'new_products' && (
                 <>
-                  <div className="flex items-center justify-between gap-3">
-                    <h2 className="text-lg font-bold text-slate-900">Sản phẩm mới</h2>
+                  <div className="flex items-center justify-end gap-3">
                     <span className="text-xs text-slate-500">Chỉ gồm sản phẩm trong 7 ngày gần nhất</span>
                   </div>
                   <div className="space-y-3">
@@ -4210,8 +4617,7 @@ export default function StaffDashboardPage() {
                         <div className="flex items-center gap-2">
                           <button
                             onClick={() => {
-                              startEditProduct(product);
-                              handleTabChange('products_list');
+                              handleQuickEditProduct(product);
                             }}
                             className="px-3 py-2 rounded-lg text-sm font-medium text-blue-700 bg-blue-50 hover:bg-blue-100"
                           >
@@ -4227,8 +4633,7 @@ export default function StaffDashboardPage() {
 
               {activeTab === 'featured_products' && (
                 <>
-                  <div className="flex items-center justify-between gap-3">
-                    <h2 className="text-lg font-bold text-slate-900">Sản phẩm nổi bật</h2>
+                  <div className="flex items-center justify-end gap-3">
                     <span className="text-xs text-slate-500">Quản lý danh sách hiển thị ưu tiên</span>
                   </div>
                   <div className="space-y-3">
@@ -4241,8 +4646,7 @@ export default function StaffDashboardPage() {
                         <div className="flex items-center gap-2">
                           <button
                             onClick={() => {
-                              startEditProduct(product);
-                              handleTabChange('products_list');
+                              handleQuickEditProduct(product);
                             }}
                             className="px-3 py-2 rounded-lg text-sm font-medium text-blue-700 bg-blue-50 hover:bg-blue-100"
                           >
@@ -4329,7 +4733,7 @@ export default function StaffDashboardPage() {
                         }}
                         className="h-10 px-3 border border-slate-200 rounded-lg text-sm bg-white"
                       >
-                        <option value="none">Ảnh thủ công, mở trang sản phẩm</option>
+                        <option value="none">Ảnh thủ công (không gắn link)</option>
                         <option value="product">Lấy ảnh từ sản phẩm</option>
                         <option value="category">Lấy ảnh từ danh mục</option>
                       </select>
@@ -4420,7 +4824,7 @@ export default function StaffDashboardPage() {
                                   }}
                                   className="h-10 px-3 border border-slate-200 rounded-lg text-sm bg-white"
                                 >
-                                  <option value="none">Ảnh thủ công, mở trang sản phẩm</option>
+                                  <option value="none">Ảnh thủ công (không gắn link)</option>
                                   <option value="product">Lấy ảnh từ sản phẩm</option>
                                   <option value="category">Lấy ảnh từ danh mục</option>
                                 </select>
@@ -4569,15 +4973,25 @@ export default function StaffDashboardPage() {
                   />
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-                  <select
-                    value={newCategoryProductGroup}
-                    onChange={event => setNewCategoryProductGroup(event.target.value as CategoryProductGroup)}
-                    className="h-10 px-3 border border-slate-200 rounded-lg text-sm bg-white"
-                  >
-                    {CATEGORY_PRODUCT_GROUP_OPTIONS.map(option => (
-                      <option key={option.value} value={option.value}>{option.label}</option>
-                    ))}
-                  </select>
+                  <div className="flex items-center gap-2">
+                    <select
+                      value={newCategoryProductGroup}
+                      onChange={event => setNewCategoryProductGroup(event.target.value as CategoryProductGroup)}
+                      className="h-10 min-w-0 flex-1 px-3 border border-slate-200 rounded-lg text-sm bg-white"
+                    >
+                      {categoryProductGroupOptions.map(option => (
+                        <option key={option.value} value={option.value}>{option.label}</option>
+                      ))}
+                    </select>
+                    <button
+                      type="button"
+                      onClick={() => setIsCreateGroupPopupOpen(true)}
+                      className="h-10 px-3 rounded-lg text-sm font-semibold border border-slate-300 bg-white text-slate-700 hover:bg-slate-50"
+                    >
+                      <Plus className="w-4 h-4 inline mr-1" />
+                      Thêm nhóm
+                    </button>
+                  </div>
                   <select
                     value={newCategorySizeType}
                     onChange={event => setNewCategorySizeType(event.target.value as CategorySizeType)}
@@ -4614,6 +5028,37 @@ export default function StaffDashboardPage() {
                   </button>
                 </div>
               </form>
+              {isCreateGroupPopupOpen && (
+                <div className="fixed inset-0 z-[70] bg-slate-900/35 backdrop-blur-[1px] flex items-center justify-center p-4">
+                  <div className="w-full max-w-sm rounded-xl bg-white border border-slate-200 shadow-xl p-4 space-y-3">
+                    <h4 className="text-sm font-semibold text-slate-900">Thêm nhóm sản phẩm</h4>
+                    <input
+                      value={newCategoryGroupLabel}
+                      onChange={event => setNewCategoryGroupLabel(event.target.value)}
+                      placeholder="Tên nhóm (VD: Sản phẩm bóng đá)"
+                      className="h-10 w-full px-3 border border-slate-200 rounded-lg text-sm bg-white"
+                    />
+                    <div className="flex items-center justify-end gap-2 pt-1">
+                      <button
+                        type="button"
+                        onClick={closeCreateCategoryGroupPopup}
+                        disabled={creatingCategoryGroup}
+                        className="h-9 px-3 rounded-lg text-sm font-medium text-slate-700 bg-slate-100 hover:bg-slate-200 disabled:opacity-50"
+                      >
+                        Hủy
+                      </button>
+                      <button
+                        type="button"
+                        onClick={handleCreateCategoryGroup}
+                        disabled={creatingCategoryGroup}
+                        className="h-9 px-3 rounded-lg text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 disabled:opacity-50"
+                      >
+                        {creatingCategoryGroup ? 'Đang lưu...' : 'Lưu'}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
 
               <div className="space-y-3">
                 {categories.map(category => (
@@ -4646,7 +5091,7 @@ export default function StaffDashboardPage() {
                             onChange={event => setEditCategoryProductGroup(event.target.value as CategoryProductGroup)}
                             className="h-10 px-3 border border-slate-200 rounded-lg text-sm bg-white"
                           >
-                            {CATEGORY_PRODUCT_GROUP_OPTIONS.map(option => (
+                            {categoryProductGroupOptions.map(option => (
                               <option key={option.value} value={option.value}>{option.label}</option>
                             ))}
                           </select>
@@ -4708,7 +5153,7 @@ export default function StaffDashboardPage() {
                           <p className="text-xs text-slate-500">{category.slug}</p>
                           {category.description && <p className="text-xs text-slate-400 mt-0.5 truncate">{category.description}</p>}
                           <p className="text-xs text-slate-500 mt-1">
-                            Nhóm: {CATEGORY_PRODUCT_GROUP_OPTIONS.find(item => item.value === (category.product_group || 'badminton'))?.label || 'Sản phẩm cầu lông'}
+                            Nhóm: {getCategoryGroupLabel(category.product_group)}
                           </p>
                           <p className="text-xs text-slate-500 mt-1">
                             {category.size_type === 'shoes' && 'Size: 36-42 (Giày dép)'}
@@ -4755,7 +5200,7 @@ export default function StaffDashboardPage() {
                       onChange={event => setNewHomeSectionGroup(event.target.value as CategoryProductGroup)}
                       className="h-10 px-3 border border-slate-200 rounded-lg text-sm bg-white"
                     >
-                      {CATEGORY_PRODUCT_GROUP_OPTIONS.map(option => (
+                      {categoryProductGroupOptions.map(option => (
                         <option key={option.value} value={option.value}>{option.label}</option>
                       ))}
                     </select>
@@ -4807,7 +5252,7 @@ export default function StaffDashboardPage() {
                               onChange={event => setEditHomeSectionGroup(event.target.value as CategoryProductGroup)}
                               className="h-10 px-3 border border-slate-200 rounded-lg text-sm bg-white"
                             >
-                              {CATEGORY_PRODUCT_GROUP_OPTIONS.map(option => (
+                              {categoryProductGroupOptions.map(option => (
                                 <option key={option.value} value={option.value}>{option.label}</option>
                               ))}
                             </select>
@@ -4854,7 +5299,7 @@ export default function StaffDashboardPage() {
                           <div className="min-w-0">
                             <p className="font-semibold text-slate-900">{section.title}</p>
                             <p className="text-xs text-slate-500 mt-1">
-                              Nhóm: {CATEGORY_PRODUCT_GROUP_OPTIONS.find(item => item.value === (section.product_group || 'badminton'))?.label || 'Sản phẩm cầu lông'}
+                              Nhóm: {getCategoryGroupLabel(section.product_group)}
                             </p>
                             <p className="text-xs text-slate-500 mt-1 truncate">
                               Danh mục: {section.categoryIds
@@ -5104,6 +5549,66 @@ export default function StaffDashboardPage() {
                 <p className="text-sm text-slate-500">
                   {activeTab === 'customers' ? 'Chưa có tài khoản khách hàng nào.' : 'Chưa có tài khoản nhân viên nào.'}
                 </p>
+              )}
+            </div>
+          )}
+
+          {activeTab === 'about_content' && (
+            <div className="bg-white border border-slate-200 rounded-2xl p-5 space-y-4">
+              <h2 className="text-lg font-bold text-slate-900">Quản lý nội dung Giới thiệu</h2>
+              {!aboutFeatureEnabled && (
+                <div className="p-4 rounded-xl bg-amber-50 border border-amber-200 text-amber-800 text-sm">
+                  Chưa có bảng `site_contents` trong database hoặc API chưa mở bảng này.
+                </div>
+              )}
+              {aboutFeatureEnabled && (
+                <>
+                  <p className="text-sm text-slate-600">
+                    Nội dung tại đây sẽ hiển thị trên trang `Giới thiệu` ở header và chỉ hiển thị dạng văn bản.
+                  </p>
+                  <textarea
+                    value={aboutContentValue}
+                    onChange={event => setAboutContentValue(event.target.value)}
+                    rows={14}
+                    disabled={!isAdmin}
+                    placeholder="Nhập nội dung giới thiệu..."
+                    className="w-full rounded-xl border border-slate-200 px-3 py-3 text-sm text-slate-700 bg-white focus:outline-none focus:ring-2 focus:ring-blue-200 disabled:bg-slate-100"
+                  />
+                  {aboutContentError && <p className="text-sm text-rose-600">{aboutContentError}</p>}
+                  {aboutContentMessage && <p className="text-sm text-emerald-700">{aboutContentMessage}</p>}
+                  <div className="flex items-center justify-end gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setShowAboutPreview(prev => !prev)}
+                      className="px-4 py-2 rounded-lg text-sm font-medium text-slate-700 bg-slate-100 hover:bg-slate-200"
+                    >
+                      {showAboutPreview ? 'Ẩn xem trước' : 'Xem trước'}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleSaveAboutContent}
+                      disabled={submitting || !isAdmin}
+                      className="px-4 py-2 rounded-lg text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 disabled:opacity-50"
+                    >
+                      {submitting ? 'Đang lưu...' : 'Lưu nội dung'}
+                    </button>
+                  </div>
+                  {showAboutPreview && (
+                    <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                      <p className="text-xs font-semibold tracking-wider text-slate-500 uppercase mb-3">Xem trước trang Giới thiệu</p>
+                      <h3 className="text-2xl font-extrabold text-slate-900 uppercase mb-4">Giới thiệu</h3>
+                      <div className="space-y-3 text-[17px] leading-8 text-slate-700">
+                        {String(aboutContentValue || '')
+                          .split('\n')
+                          .map(item => item.trim())
+                          .filter(Boolean)
+                          .map((paragraph, index) => (
+                            <p key={`preview-about-${index}`}>{paragraph}</p>
+                          ))}
+                      </div>
+                    </div>
+                  )}
+                </>
               )}
             </div>
           )}

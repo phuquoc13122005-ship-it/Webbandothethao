@@ -8,7 +8,6 @@ const nodemailer = require('nodemailer');
 const { randomUUID, randomInt } = require('crypto');
 const mysql = require('mysql2/promise');
 const bcrypt = require('bcryptjs');
-const jwt = require('jsonwebtoken');
 
 dotenv.config({ path: path.join(__dirname, '.env'), override: true });
 
@@ -16,12 +15,6 @@ const app = express();
 const PORT = process.env.PORT || 4000;
 const FRONTEND_URL = process.env.FRONTEND_URL || 'http://localhost:5173';
 const SESSION_SECRET = process.env.SESSION_SECRET || 'change-me-in-env';
-const JWT_ACCESS_SECRET = process.env.JWT_ACCESS_SECRET || `${SESSION_SECRET}_access`;
-const JWT_REFRESH_SECRET = process.env.JWT_REFRESH_SECRET || `${SESSION_SECRET}_refresh`;
-const JWT_ACCESS_EXPIRES_IN = process.env.JWT_ACCESS_EXPIRES_IN || '15m';
-const JWT_REFRESH_EXPIRES_IN = process.env.JWT_REFRESH_EXPIRES_IN || '7d';
-const JWT_REFRESH_COOKIE_NAME = process.env.JWT_REFRESH_COOKIE_NAME || 'refresh_token';
-const JWT_REFRESH_COOKIE_MAX_AGE_MS = Number(process.env.JWT_REFRESH_COOKIE_MAX_AGE_MS || 7 * 24 * 60 * 60 * 1000);
 const SMTP_HOST = process.env.SMTP_HOST;
 const SMTP_PORT = Number(process.env.SMTP_PORT || 587);
 const SMTP_USER = process.env.SMTP_USER;
@@ -102,120 +95,6 @@ function toAuthUser(user) {
       avatar_url: user.avatar_url || '',
     },
   };
-}
-
-function buildSessionUser(user) {
-  return {
-    id: String(user.id || ''),
-    email: user.email || null,
-    provider: user.provider || 'local',
-    full_name: user.full_name || '',
-    avatar_url: user.avatar_url || '',
-  };
-}
-
-function issueAccessToken(user) {
-  return jwt.sign(
-    {
-      sub: String(user.id || ''),
-      type: 'access',
-      email: user.email || null,
-      provider: user.provider || 'local',
-      full_name: user.full_name || '',
-      avatar_url: user.avatar_url || '',
-    },
-    JWT_ACCESS_SECRET,
-    { expiresIn: JWT_ACCESS_EXPIRES_IN },
-  );
-}
-
-function issueRefreshToken(user) {
-  return jwt.sign(
-    {
-      sub: String(user.id || ''),
-      type: 'refresh',
-      email: user.email || null,
-      provider: user.provider || 'local',
-    },
-    JWT_REFRESH_SECRET,
-    { expiresIn: JWT_REFRESH_EXPIRES_IN },
-  );
-}
-
-function issueAuthTokens(user) {
-  return {
-    accessToken: issueAccessToken(user),
-    refreshToken: issueRefreshToken(user),
-  };
-}
-
-function setRefreshTokenCookie(res, refreshToken) {
-  res.cookie(JWT_REFRESH_COOKIE_NAME, refreshToken, {
-    httpOnly: true,
-    secure: false,
-    sameSite: 'lax',
-    maxAge: JWT_REFRESH_COOKIE_MAX_AGE_MS,
-  });
-}
-
-function clearRefreshTokenCookie(res) {
-  res.clearCookie(JWT_REFRESH_COOKIE_NAME);
-}
-
-function getCookieValue(req, key) {
-  const cookieHeader = String(req.headers?.cookie || '');
-  if (!cookieHeader) return '';
-  const parts = cookieHeader.split(';');
-  for (const part of parts) {
-    const [cookieKey, ...cookieValueParts] = part.trim().split('=');
-    if (cookieKey === key) {
-      return decodeURIComponent(cookieValueParts.join('='));
-    }
-  }
-  return '';
-}
-
-async function loadUserWithProfileById(userId) {
-  const id = String(userId || '').trim();
-  if (!id) return null;
-  const rows = await runQuery(
-    'select u.id, u.email, u.provider, p.full_name, p.avatar_url from users u left join profiles p on p.id = u.id where u.id = ? limit 1',
-    [id],
-  );
-  if (!rows.length) return null;
-  return buildSessionUser(rows[0]);
-}
-
-async function authenticateByAccessToken(req) {
-  const authHeader = String(req.headers.authorization || '');
-  if (!authHeader.toLowerCase().startsWith('bearer ')) return null;
-  const accessToken = authHeader.slice(7).trim();
-  if (!accessToken) return null;
-  try {
-    const decoded = jwt.verify(accessToken, JWT_ACCESS_SECRET);
-    if (String(decoded?.type || '') !== 'access') return null;
-    const tokenUser = await loadUserWithProfileById(decoded?.sub);
-    if (!tokenUser) return null;
-    req.session.user = tokenUser;
-    return tokenUser;
-  } catch {
-    return null;
-  }
-}
-
-async function respondWithAuthSuccess(res, user) {
-  const safeUser = buildSessionUser(user);
-  const { accessToken, refreshToken } = issueAuthTokens(safeUser);
-  setRefreshTokenCookie(res, refreshToken);
-  return res.json({
-    data: {
-      user: toAuthUser(safeUser),
-      access_token: accessToken,
-      token_type: 'Bearer',
-      expires_in: JWT_ACCESS_EXPIRES_IN,
-    },
-    error: null,
-  });
 }
 
 async function runQuery(sql, params = []) {
@@ -348,6 +227,59 @@ async function ensureHomeCategorySectionsTable() {
   `);
 }
 
+async function ensureSiteContentsTable() {
+  await runQuery(`
+    create table if not exists site_contents (
+      id varchar(64) not null primary key,
+      content_key varchar(64) not null unique,
+      content_title varchar(255) null,
+      content_value longtext null,
+      updated_by varchar(64) null,
+      created_at timestamp default current_timestamp,
+      updated_at timestamp default current_timestamp on update current_timestamp
+    )
+  `);
+
+  await runQuery(
+    `insert into site_contents (id, content_key, content_title, content_value)
+     values (?, 'about_page', ?, ?)
+     on duplicate key update content_title = values(content_title)`,
+    [
+      randomUUID(),
+      'Giới thiệu',
+      'Shop thể thao của chúng tôi được xây dựng với mục tiêu mang sản phẩm chính hãng đến gần hơn với người dùng Việt Nam.\n\nĐội ngũ luôn kiểm soát chất lượng, tư vấn đúng nhu cầu và duy trì dịch vụ hậu mãi rõ ràng để khách hàng yên tâm mua sắm.\n\nChúng tôi không ngừng mở rộng danh mục, cập nhật mẫu mới và tối ưu trải nghiệm để phục vụ cộng đồng yêu thể thao tốt hơn mỗi ngày.',
+    ],
+  );
+}
+
+async function ensureCategoryGroupsTable() {
+  await runQuery(`
+    create table if not exists category_groups (
+      id varchar(64) not null primary key,
+      group_key varchar(30) not null unique,
+      group_label varchar(255) not null,
+      created_at timestamp default current_timestamp,
+      updated_at timestamp default current_timestamp on update current_timestamp
+    )
+  `);
+
+  const defaultGroupSeeds = [
+    ['badminton', 'Sản phẩm cầu lông'],
+    ['tennis', 'Sản phẩm tennis'],
+    ['pickleball', 'Sản phẩm pickleball'],
+    ['other', 'Nhóm khác'],
+  ];
+
+  for (const [groupKey, groupLabel] of defaultGroupSeeds) {
+    await runQuery(
+      `insert into category_groups (id, group_key, group_label)
+       values (?, ?, ?)
+       on duplicate key update group_label = values(group_label)`,
+      [randomUUID(), groupKey, groupLabel],
+    );
+  }
+}
+
 async function ensureReviewsTable() {
   const ensureColumn = async (tableName, columnName, definitionSql) => {
     const rows = await runQuery(
@@ -465,6 +397,19 @@ async function ensurePromotionsTables() {
   `);
 }
 
+async function ensureOrdersInventoryColumn() {
+  const rows = await runQuery(
+    `select count(*) as count_value
+     from information_schema.columns
+     where table_schema = database()
+       and table_name = 'orders'
+       and column_name = 'stock_deducted'`,
+  );
+  const countValue = Number(rows?.[0]?.count_value || 0);
+  if (countValue > 0) return;
+  await runQuery("alter table orders add column stock_deducted tinyint(1) not null default 0");
+}
+
 async function recomputeProductReviewStats(productId) {
   const normalizedProductId = String(productId || '').trim();
   if (!normalizedProductId) return;
@@ -485,6 +430,56 @@ async function recomputeProductReviewStats(productId) {
     'update products set rating = ?, reviews_count = ? where id = ?',
     [avgRating, totalReviews, normalizedProductId],
   );
+}
+
+function parseSizeStockValue(rawValue) {
+  if (!rawValue) return {};
+  try {
+    const parsed = JSON.parse(String(rawValue));
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return {};
+    return parsed;
+  } catch {
+    return {};
+  }
+}
+
+async function applyOrderInventoryDelta(orderId, direction) {
+  const normalizedOrderId = String(orderId || '').trim();
+  if (!normalizedOrderId) return;
+  const multiplier = direction === 'restore' ? 1 : -1;
+  const orderItems = await runQuery(
+    'select product_id, quantity, shoe_size from order_items where order_id = ?',
+    [normalizedOrderId],
+  );
+  for (const item of orderItems) {
+    const productId = String(item?.product_id || '').trim();
+    const quantity = Math.max(0, Math.floor(Number(item?.quantity || 0)));
+    if (!productId || quantity <= 0) continue;
+
+    if (multiplier < 0) {
+      await runQuery('update products set stock = greatest(stock - ?, 0) where id = ?', [quantity, productId]);
+    } else {
+      await runQuery('update products set stock = stock + ? where id = ?', [quantity, productId]);
+    }
+
+    const shoeSizeRaw = item?.shoe_size;
+    if (shoeSizeRaw == null || shoeSizeRaw === '') continue;
+    const shoeSizeNumber = Number(shoeSizeRaw);
+    if (!Number.isFinite(shoeSizeNumber)) continue;
+    const shoeSizeKey = String(Math.floor(shoeSizeNumber));
+
+    const productRows = await runQuery('select size_stock from products where id = ? limit 1', [productId]);
+    const rawSizeStock = String(productRows?.[0]?.size_stock || '').trim();
+    if (!rawSizeStock) continue;
+
+    const sizeStockMap = parseSizeStockValue(rawSizeStock);
+    const currentSizeStock = Math.max(0, Math.floor(Number(sizeStockMap[shoeSizeKey] || 0)));
+    const nextSizeStock = multiplier < 0
+      ? Math.max(0, currentSizeStock - quantity)
+      : currentSizeStock + quantity;
+    sizeStockMap[shoeSizeKey] = nextSizeStock;
+    await runQuery('update products set size_stock = ? where id = ?', [JSON.stringify(sizeStockMap), productId]);
+  }
 }
 
 async function getRoleByUserId(userId) {
@@ -566,12 +561,8 @@ async function decorateRows(table, selectText, rows) {
   return rows;
 }
 
-async function requireSession(req, res, next) {
-  if (req.session.user?.id) {
-    return next();
-  }
-  const tokenUser = await authenticateByAccessToken(req);
-  if (!tokenUser?.id) {
+function requireSession(req, res, next) {
+  if (!req.session.user?.id) {
     return res.status(401).json({ error: { message: 'UNAUTHENTICATED' } });
   }
   return next();
@@ -727,15 +718,13 @@ app.get('/auth/google/callback', async (req, res) => {
       );
     }
 
-    req.session.user = buildSessionUser({
+    req.session.user = {
       provider: 'google',
       id: appUserId || String(data.id || ''),
       email: googleEmail || null,
       full_name: googleName,
       avatar_url: googleAvatar,
-    });
-    const { refreshToken } = issueAuthTokens(req.session.user);
-    setRefreshTokenCookie(res, refreshToken);
+    };
     delete req.session.oauthState;
 
     return res.redirect(`${FRONTEND_URL}/`);
@@ -755,7 +744,6 @@ app.get('/auth/me', (req, res) => {
 app.post('/auth/logout', (req, res) => {
   req.session.destroy(() => {
     res.clearCookie('sid');
-    clearRefreshTokenCookie(res);
     res.json({ ok: true });
   });
 });
@@ -782,15 +770,15 @@ app.post('/api/auth/register', async (req, res) => {
       [id, fullName || '', '', '', '', 'customer'],
     );
 
-    req.session.user = buildSessionUser({
+    req.session.user = {
       id,
       email,
       provider: 'local',
       full_name: fullName || '',
       avatar_url: '',
-    });
+    };
 
-    return respondWithAuthSuccess(res, req.session.user);
+    return res.json({ data: { user: toAuthUser(req.session.user) }, error: null });
   } catch (error) {
     return res.status(500).json({ error: { message: error.message } });
   }
@@ -1330,8 +1318,14 @@ app.post('/api/auth/login', async (req, res) => {
       return res.status(401).json({ error: { message: 'Invalid login credentials' } });
     }
 
-    req.session.user = buildSessionUser(user);
-    return respondWithAuthSuccess(res, req.session.user);
+    req.session.user = {
+      id: user.id,
+      email: user.email,
+      provider: user.provider || 'local',
+      full_name: user.full_name || '',
+      avatar_url: user.avatar_url || '',
+    };
+    return res.json({ data: { user: toAuthUser(req.session.user) }, error: null });
   } catch (error) {
     return res.status(500).json({ error: { message: error.message } });
   }
@@ -1340,57 +1334,22 @@ app.post('/api/auth/login', async (req, res) => {
 app.post('/api/auth/logout', (req, res) => {
   req.session.destroy(() => {
     res.clearCookie('sid');
-    clearRefreshTokenCookie(res);
     res.json({ data: { ok: true }, error: null });
   });
 });
 
-app.get('/api/auth/session', async (req, res) => {
-  if (!req.session.user) {
-    await authenticateByAccessToken(req);
-  }
+app.get('/api/auth/session', (req, res) => {
   if (!req.session.user) {
     return res.json({ data: { session: null }, error: null });
   }
   return res.json({ data: { session: { user: toAuthUser(req.session.user) } }, error: null });
 });
 
-app.get('/api/auth/user', async (req, res) => {
-  if (!req.session.user) {
-    await authenticateByAccessToken(req);
-  }
+app.get('/api/auth/user', (req, res) => {
   if (!req.session.user) {
     return res.status(401).json({ data: { user: null }, error: { message: 'UNAUTHENTICATED' } });
   }
   return res.json({ data: { user: toAuthUser(req.session.user) }, error: null });
-});
-
-app.post('/api/auth/refresh-token', async (req, res) => {
-  try {
-    const refreshTokenFromCookie = getCookieValue(req, JWT_REFRESH_COOKIE_NAME);
-    const refreshTokenFromBody = String(req.body?.refresh_token || '').trim();
-    const refreshToken = refreshTokenFromCookie || refreshTokenFromBody;
-    if (!refreshToken) {
-      return res.status(401).json({ error: { message: 'REFRESH_TOKEN_REQUIRED' } });
-    }
-    let decoded;
-    try {
-      decoded = jwt.verify(refreshToken, JWT_REFRESH_SECRET);
-    } catch {
-      return res.status(401).json({ error: { message: 'INVALID_REFRESH_TOKEN' } });
-    }
-    if (String(decoded?.type || '') !== 'refresh') {
-      return res.status(401).json({ error: { message: 'INVALID_REFRESH_TOKEN' } });
-    }
-    const user = await loadUserWithProfileById(decoded?.sub);
-    if (!user) {
-      return res.status(401).json({ error: { message: 'USER_NOT_FOUND' } });
-    }
-    req.session.user = user;
-    return respondWithAuthSuccess(res, user);
-  } catch (error) {
-    return res.status(500).json({ error: { message: error.message } });
-  }
 });
 
 app.post('/api/auth/send-otp', async (req, res) => {
@@ -1444,9 +1403,15 @@ app.post('/api/auth/verify-otp', async (req, res) => {
       return res.status(404).json({ error: { message: 'USER_NOT_FOUND' } });
     }
     const user = users[0];
-    req.session.user = buildSessionUser(user);
+    req.session.user = {
+      id: user.id,
+      email: user.email,
+      provider: user.provider || 'local',
+      full_name: user.full_name || '',
+      avatar_url: user.avatar_url || '',
+    };
     otpStore.delete(email);
-    return respondWithAuthSuccess(res, req.session.user);
+    return res.json({ data: { user: toAuthUser(req.session.user) }, error: null });
   } catch (error) {
     return res.status(500).json({ error: { message: error.message } });
   }
@@ -1655,11 +1620,13 @@ app.post('/api/auth/forgot-password/reset', async (req, res) => {
   }
 });
 
-const READABLE_WITHOUT_AUTH = new Set(['products', 'categories', 'banners', 'branches', 'home_category_sections']);
+const READABLE_WITHOUT_AUTH = new Set(['products', 'categories', 'banners', 'branches', 'home_category_sections', 'site_contents']);
 const TABLE_WHITELIST = new Set([
   'users',
   'profiles',
   'categories',
+  'category_groups',
+  'site_contents',
   'branches',
   'home_category_sections',
   'banners',
@@ -1751,11 +1718,36 @@ app.post('/api/db/update', requireSession, async (req, res) => {
     const setSql = keys.map(key => `${key} = ?`).join(', ');
     const setValues = keys.map(key => values[key]);
     const { whereSql, values: whereValues } = buildWhereClause(filters);
+    const shouldHandleOrderInventory = table === 'orders' && keys.includes('status');
+    const beforeOrderRows = shouldHandleOrderInventory
+      ? await runQuery(`select id, status, coalesce(stock_deducted, 0) as stock_deducted from orders${whereSql}`, whereValues)
+      : [];
     const beforeRows = table === 'reviews'
       ? await runQuery(`select product_id from ${table}${whereSql}`, whereValues)
       : [];
     await runQuery(`update ${table} set ${setSql}${whereSql}`, [...setValues, ...whereValues]);
     const rows = await runQuery(`select * from ${table}${whereSql}`, whereValues);
+    if (shouldHandleOrderInventory) {
+      const beforeMap = new Map(
+        beforeOrderRows.map(item => [String(item?.id || ''), {
+          status: String(item?.status || '').toLowerCase(),
+          stockDeducted: Boolean(Number(item?.stock_deducted || 0)),
+        }]),
+      );
+      for (const row of rows) {
+        const orderId = String(row?.id || '').trim();
+        if (!orderId) continue;
+        const prev = beforeMap.get(orderId) || { status: '', stockDeducted: false };
+        const nextStatus = String(row?.status || '').toLowerCase();
+        if (nextStatus === 'shipping' && !prev.stockDeducted) {
+          await applyOrderInventoryDelta(orderId, 'deduct');
+          await runQuery('update orders set stock_deducted = 1 where id = ?', [orderId]);
+        } else if (nextStatus === 'cancelled' && prev.stockDeducted) {
+          await applyOrderInventoryDelta(orderId, 'restore');
+          await runQuery('update orders set stock_deducted = 0 where id = ?', [orderId]);
+        }
+      }
+    }
     if (table === 'reviews') {
       const affectedProductIds = [...new Set(
         [...beforeRows, ...rows]
@@ -1894,8 +1886,8 @@ app.post('/api/db/rpc', requireSession, async (req, res) => {
 
     const orderId = randomUUID();
     await connection.execute(
-      'insert into orders (id, user_id, total, shipping_address, status) values (?, ?, ?, ?, ?)',
-      [orderId, userId, finalTotal, shippingAddress, status],
+      'insert into orders (id, user_id, total, shipping_address, status, stock_deducted) values (?, ?, ?, ?, ?, ?)',
+      [orderId, userId, finalTotal, shippingAddress, status, 0],
     );
 
     for (const item of items) {
@@ -1912,10 +1904,12 @@ app.post('/api/db/rpc', requireSession, async (req, res) => {
         [randomUUID(), orderId, productId, Math.floor(quantity), price, shoeSize],
       );
 
-      await connection.execute(
-        'update products set stock = greatest(stock - ?, 0) where id = ?',
-        [Math.floor(quantity), productId],
-      );
+    }
+
+    const normalizedStatus = String(status || '').toLowerCase();
+    if (normalizedStatus === 'shipping') {
+      await applyOrderInventoryDelta(orderId, 'deduct');
+      await connection.execute('update orders set stock_deducted = 1 where id = ?', [orderId]);
     }
 
     if (promotionAssignmentId) {
@@ -1938,6 +1932,9 @@ app.post('/api/db/rpc', requireSession, async (req, res) => {
 Promise.all([
   ensureImageStorageTable(),
   ensureProductAndCategoryOptionColumns(),
+  ensureOrdersInventoryColumn(),
+  ensureSiteContentsTable(),
+  ensureCategoryGroupsTable(),
   ensureBranchesTable(),
   ensureHomeCategorySectionsTable(),
   ensureBannersTable(),

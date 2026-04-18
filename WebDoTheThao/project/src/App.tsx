@@ -15,6 +15,7 @@ import VerifyResetCodePage from './pages/VerifyResetCodePage';
 import ResetPasswordPage from './pages/ResetPasswordPage';
 import StaffDashboardPage from './pages/StaffDashboardPage';
 import StaffAdminLoginPage from './pages/StaffAdminLoginPage';
+import AboutPage from './pages/AboutPage';
 
 export default function App() {
   return (
@@ -35,6 +36,7 @@ export default function App() {
               <Route path="/forgot-password" element={<ForgotPasswordPage />} />
               <Route path="/verify-reset-code" element={<VerifyResetCodePage />} />
               <Route path="/reset-password" element={<ResetPasswordPage />} />
+              <Route path="/gioi-thieu" element={<AboutPage />} />
               <Route path="/dashboard" element={<DashboardPage />} />
               <Route path="/staff-dashboard" element={<StaffDashboardPage />} />
               <Route path="/admin-dashboard" element={<StaffDashboardPage />} />

@@ -7,6 +7,7 @@ import {
 import { db } from '../lib/db';
 import type { Product, Category, Banner, CategoryProductGroup, HomeCategorySection } from '../types';
 import ProductCard from '../components/ui/ProductCard';
+import { getDiscountPercent } from '../lib/formatters';
 
 const NEW_PRODUCT_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
 const HERO_SLIDE_INTERVAL_MS = 3000;
@@ -32,6 +33,8 @@ function parseCategoryIdsJson(rawValue?: string | null) {
 
 let homePageCache: {
   featured: Product[];
+  promoProducts: Product[];
+  bannerProductRefs: Array<{ id: string; slug: string }>;
   categories: Category[];
   allProducts: Product[];
   banners: Banner[];
@@ -40,6 +43,8 @@ let homePageCache: {
 
 export default function HomePage() {
   const [featured, setFeatured] = useState<Product[]>(homePageCache?.featured || []);
+  const [promoProducts, setPromoProducts] = useState<Product[]>(homePageCache?.promoProducts || []);
+  const [bannerProductRefs, setBannerProductRefs] = useState<Array<{ id: string; slug: string }>>(homePageCache?.bannerProductRefs || []);
   const [categories, setCategories] = useState<Category[]>(homePageCache?.categories || []);
   const [allProducts, setAllProducts] = useState<Product[]>(homePageCache?.allProducts || []);
   const [banners, setBanners] = useState<Banner[]>(homePageCache?.banners || []);
@@ -65,11 +70,11 @@ export default function HomePage() {
   }, [categories]);
   const productSlugById = useMemo(() => {
     const map = new Map<string, string>();
-    allProducts.forEach(item => {
+    bannerProductRefs.forEach(item => {
       if (item.id && item.slug) map.set(item.id, item.slug);
     });
     return map;
-  }, [allProducts]);
+  }, [bannerProductRefs]);
 
   const getBannerTargetHref = (banner: Banner) => {
     if (banner.target_type === 'product') {
@@ -78,7 +83,7 @@ export default function HomePage() {
         || (banner.target_product_id ? productSlugById.get(banner.target_product_id) : '')
         || '',
       ).trim();
-      return productSlug ? `/products/${productSlug}` : '/products';
+      return productSlug ? `/products/${productSlug}` : null;
     }
     if (banner.target_type === 'category') {
       const categorySlug = String(
@@ -86,9 +91,9 @@ export default function HomePage() {
         || (banner.target_category_id ? categorySlugById.get(banner.target_category_id) : '')
         || '',
       ).trim();
-      return categorySlug ? `/products?category=${encodeURIComponent(categorySlug)}` : '/products';
+      return categorySlug ? `/products?category=${encodeURIComponent(categorySlug)}` : null;
     }
-    return '/products';
+    return null;
   };
 
   useEffect(() => {
@@ -107,41 +112,56 @@ export default function HomePage() {
     let active = true;
 
     async function load() {
-      if (!homePageCache) setLoading(true);
-      const [featuredRes, catRes, productsRes, bannersRes, sectionsRes] = await Promise.all([
-        db.from('products').select('*').eq('featured', true).limit(4),
-        db.from('categories').select('*').order('created_at'),
-        db.from('products').select('*').order('created_at', { ascending: false }).limit(60),
-        db.from('banners').select('*').order('sort_order', { ascending: true }),
-        db.from('home_category_sections').select('*').eq('is_active', 1).order('sort_order', { ascending: true }),
-      ]);
+      try {
+        if (!homePageCache) setLoading(true);
+        const [featuredRes, promoSourceRes, bannerProductRefsRes, catRes, productsRes, bannersRes, sectionsRes] = await Promise.all([
+          db.from('products').select('*').eq('featured', true).limit(4),
+          db.from('products').select('*').order('created_at', { ascending: false }).limit(120),
+          db.from('products').select('id, slug'),
+          db.from('categories').select('*').order('created_at'),
+          db.from('products').select('*').order('created_at', { ascending: false }).limit(60),
+          db.from('banners').select('*').order('sort_order', { ascending: true }),
+          db.from('home_category_sections').select('*').eq('is_active', 1).order('sort_order', { ascending: true }),
+        ]);
 
-      if (!active) return;
+        if (!active) return;
 
-      const nextFeatured = featuredRes.data || [];
-      const nextCategories = catRes.data || [];
-      const nextBanners = (bannersRes.data || []) as Banner[];
-      const nextSections = (sectionsRes.data || []) as HomeCategorySection[];
-      const now = Date.now();
-      const nextAllProducts = (productsRes.data || [])
-        .filter((product: Product) => {
-          const createdAtMs = new Date(product.created_at || '').getTime();
-          return Number.isFinite(createdAtMs) && now - createdAtMs <= NEW_PRODUCT_WINDOW_MS;
-        });
+        const nextFeatured = featuredRes.data || [];
+        const nextPromoProducts = ((promoSourceRes.data || []) as Product[])
+          .filter(item => Number(item.original_price || 0) > Number(item.price || 0))
+          .slice(0, 24);
+        const nextBannerProductRefs = ((bannerProductRefsRes.data || []) as Array<{ id?: string; slug?: string }>)
+          .map(item => ({ id: String(item.id || '').trim(), slug: String(item.slug || '').trim() }))
+          .filter(item => item.id && item.slug);
+        const nextCategories = catRes.data || [];
+        const nextBanners = (bannersRes.data || []) as Banner[];
+        const nextSections = (sectionsRes.data || []) as HomeCategorySection[];
+        const now = Date.now();
+        const nextAllProducts = (productsRes.data || [])
+          .filter((product: Product) => {
+            const createdAtMs = new Date(product.created_at || '').getTime();
+            return Number.isFinite(createdAtMs) && now - createdAtMs <= NEW_PRODUCT_WINDOW_MS;
+          });
 
-      setFeatured(nextFeatured);
-      setCategories(nextCategories);
-      setAllProducts(nextAllProducts);
-      setBanners(nextBanners);
-      setHomeCategorySections(nextSections);
-      homePageCache = {
-        featured: nextFeatured,
-        categories: nextCategories,
-        allProducts: nextAllProducts,
-        banners: nextBanners,
-        homeCategorySections: nextSections,
-      };
-      setLoading(false);
+        setFeatured(nextFeatured);
+        setPromoProducts(nextPromoProducts);
+        setBannerProductRefs(nextBannerProductRefs);
+        setCategories(nextCategories);
+        setAllProducts(nextAllProducts);
+        setBanners(nextBanners);
+        setHomeCategorySections(nextSections);
+        homePageCache = {
+          featured: nextFeatured,
+          promoProducts: nextPromoProducts,
+          bannerProductRefs: nextBannerProductRefs,
+          categories: nextCategories,
+          allProducts: nextAllProducts,
+          banners: nextBanners,
+          homeCategorySections: nextSections,
+        };
+      } finally {
+        if (active) setLoading(false);
+      }
     }
     load();
 
@@ -167,6 +187,10 @@ export default function HomePage() {
   }
 
   const displayFeatured = featured.length > 0 ? featured : allProducts.slice(0, 4);
+  const displayPromoProducts = promoProducts.slice(0, 2);
+  const promoMaxDiscount = promoProducts.reduce((maxValue, item) => (
+    Math.max(maxValue, getDiscountPercent(Number(item.price || 0), Number(item.original_price || 0)))
+  ), 0);
   const newestProductsByCategory = (newestCategoryFilter === 'all'
     ? allProducts
     : allProducts.filter(product => product.category_id === newestCategoryFilter))
@@ -239,11 +263,17 @@ export default function HomePage() {
                 alt={slide.title || `Banner ${index + 1}`}
                 className="absolute inset-0 w-full h-full object-cover"
               />
-              <Link
-                to={getBannerTargetHref(slide)}
-                aria-label={slide.title ? `Mở banner ${slide.title}` : `Mở banner ${index + 1}`}
-                className={`absolute inset-0 ${index === heroSlideIndex ? 'pointer-events-auto' : 'pointer-events-none'}`}
-              />
+              {(() => {
+                const targetHref = getBannerTargetHref(slide);
+                if (!targetHref) return null;
+                return (
+                  <Link
+                    to={targetHref}
+                    aria-label={slide.title ? `Mở banner ${slide.title}` : `Mở banner ${index + 1}`}
+                    className={`absolute inset-0 ${index === heroSlideIndex ? 'pointer-events-auto' : 'pointer-events-none'}`}
+                  />
+                );
+              })()}
             </div>
           ))}
           <div className="absolute inset-0 pointer-events-none bg-gradient-to-r from-gray-900/90 via-gray-900/70 to-transparent" />
@@ -388,6 +418,78 @@ export default function HomePage() {
         )}
       </section>
 
+      <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 mb-20">
+        <div className="mx-auto max-w-5xl rounded-3xl bg-gradient-to-br from-teal-600 to-emerald-700 overflow-hidden">
+          <div className="px-6 sm:px-8 lg:px-10 py-10 lg:py-12">
+            <div className="flex flex-col lg:flex-row items-center gap-8">
+              <div className="flex-1 text-center lg:text-left">
+                <div className="inline-flex items-center gap-2 px-3 py-1.5 bg-white/10 rounded-full mb-6">
+                  <Tag className="w-4 h-4 text-teal-200" />
+                  <span className="text-sm font-medium text-teal-100">Khuyến mãi đặc biệt</span>
+                </div>
+                <h2 className="text-3xl lg:text-4xl font-bold text-white mb-4">
+                  Giảm đến {promoMaxDiscount > 0 ? promoMaxDiscount : 0}% cho<br />bộ sưu tập mới
+                </h2>
+                <p className="text-teal-100/80 mb-8 max-w-md">
+                  Đừng bỏ lỡ cơ hội sở hữu những sản phẩm thể thao chất lượng với giá ưu đãi nhất.
+                </p>
+                <Link
+                  to="/products?sale=1"
+                  className="inline-flex items-center gap-2 px-8 py-4 bg-white text-teal-700 font-semibold rounded-2xl hover:shadow-xl transition-all active:scale-[0.98]"
+                >
+                  Mua ngay
+                  <ArrowRight className="w-5 h-5" />
+                </Link>
+              </div>
+              <div className="flex-1 grid grid-cols-2 gap-4">
+                {displayPromoProducts.map(product => (
+                  <Link
+                    key={product.id}
+                    to={`/products/${product.slug}`}
+                    className="bg-white/10 backdrop-blur-sm rounded-2xl p-4 border border-white/10 hover:bg-white/20 transition-colors"
+                  >
+                    <div className="aspect-square rounded-xl overflow-hidden mb-3">
+                      <img src={product.image_url} alt={product.name} className="w-full h-full object-cover" />
+                    </div>
+                    <h3 className="text-sm font-semibold text-white truncate">{product.name}</h3>
+                    <p className="text-teal-200 text-sm font-bold mt-1">
+                      {new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(product.price)}
+                    </p>
+                  </Link>
+                ))}
+                {displayPromoProducts.length === 0 && (
+                  <div className="col-span-2 rounded-2xl border border-white/20 bg-white/5 px-4 py-5 text-sm text-teal-100">
+                    Hiện chưa có sản phẩm giảm giá nào để hiển thị.
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 mb-20">
+        <div className="flex items-center justify-between mb-8">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 bg-rose-50 rounded-xl flex items-center justify-center">
+              <Flame className="w-5 h-5 text-rose-500" />
+            </div>
+            <div>
+              <h2 className="text-2xl font-bold text-gray-900">Sản phẩm nổi bật</h2>
+              <p className="text-gray-500 mt-0.5 text-sm">Được yêu thích nhất</p>
+            </div>
+          </div>
+          <Link to="/products" className="hidden sm:flex items-center gap-1 text-sm font-medium text-teal-600 hover:text-teal-700 transition-colors">
+            Xem tất cả <ChevronRight className="w-4 h-4" />
+          </Link>
+        </div>
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 lg:gap-6">
+          {displayFeatured.map(product => (
+            <ProductCard key={product.id} product={product} />
+          ))}
+        </div>
+      </section>
+
       {resolvedHomeSections.map(section => (
         <section key={section.id} className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 mb-20">
           <div className="text-center mb-8">
@@ -423,71 +525,6 @@ export default function HomePage() {
           </div>
         </section>
       ))}
-
-      <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 mb-20">
-        <div className="flex items-center justify-between mb-8">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 bg-rose-50 rounded-xl flex items-center justify-center">
-              <Flame className="w-5 h-5 text-rose-500" />
-            </div>
-            <div>
-              <h2 className="text-2xl font-bold text-gray-900">Sản phẩm nổi bật</h2>
-              <p className="text-gray-500 mt-0.5 text-sm">Được yêu thích nhất</p>
-            </div>
-          </div>
-          <Link to="/products" className="hidden sm:flex items-center gap-1 text-sm font-medium text-teal-600 hover:text-teal-700 transition-colors">
-            Xem tất cả <ChevronRight className="w-4 h-4" />
-          </Link>
-        </div>
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 lg:gap-6">
-          {displayFeatured.map(product => (
-            <ProductCard key={product.id} product={product} />
-          ))}
-        </div>
-      </section>
-
-      <section className="bg-gradient-to-br from-teal-600 to-emerald-700 mb-20">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-16 lg:py-20">
-          <div className="flex flex-col lg:flex-row items-center gap-12">
-            <div className="flex-1 text-center lg:text-left">
-              <div className="inline-flex items-center gap-2 px-3 py-1.5 bg-white/10 rounded-full mb-6">
-                <Tag className="w-4 h-4 text-teal-200" />
-                <span className="text-sm font-medium text-teal-100">Khuyến mãi đặc biệt</span>
-              </div>
-              <h2 className="text-3xl lg:text-4xl font-bold text-white mb-4">
-                Giảm đến 50% cho<br />bộ sưu tập mới
-              </h2>
-              <p className="text-teal-100/80 mb-8 max-w-md">
-                Đừng bỏ lỡ cơ hội sở hữu những sản phẩm thể thao chất lượng với giá ưu đãi nhất.
-              </p>
-              <Link
-                to="/products"
-                className="inline-flex items-center gap-2 px-8 py-4 bg-white text-teal-700 font-semibold rounded-2xl hover:shadow-xl transition-all active:scale-[0.98]"
-              >
-                Mua ngay
-                <ArrowRight className="w-5 h-5" />
-              </Link>
-            </div>
-            <div className="flex-1 grid grid-cols-2 gap-4">
-              {displayFeatured.slice(0, 2).map(product => (
-                <Link
-                  key={product.id}
-                  to={`/products/${product.slug}`}
-                  className="bg-white/10 backdrop-blur-sm rounded-2xl p-4 border border-white/10 hover:bg-white/20 transition-colors"
-                >
-                  <div className="aspect-square rounded-xl overflow-hidden mb-3">
-                    <img src={product.image_url} alt={product.name} className="w-full h-full object-cover" />
-                  </div>
-                  <h3 className="text-sm font-semibold text-white truncate">{product.name}</h3>
-                  <p className="text-teal-200 text-sm font-bold mt-1">
-                    {new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(product.price)}
-                  </p>
-                </Link>
-              ))}
-            </div>
-          </div>
-        </div>
-      </section>
 
     </div>
   );

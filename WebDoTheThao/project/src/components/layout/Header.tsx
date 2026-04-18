@@ -438,9 +438,8 @@ export default function Header() {
 
           {[
             { label: 'Sale off', to: '/products?sale=1' },
-            { label: 'Tin tức', to: '/products' },
             { label: 'Hướng dẫn', to: '/products' },
-            { label: 'Giới thiệu', to: '/products' },
+            { label: 'Giới thiệu', to: '/gioi-thieu' },
             { label: 'Liên hệ', to: '/products' },
           ].map(link => (
             <Link key={link.label} to={link.to} className="text-sm font-semibold text-white hover:text-white/80 transition-colors">
@@ -468,6 +467,7 @@ export default function Header() {
             {[
               { label: 'Trang chủ', to: '/' },
               { label: 'Sản phẩm', to: '/products' },
+              { label: 'Giới thiệu', to: '/gioi-thieu' },
               { label: 'Sale off', to: '/products?sale=1' },
               { label: 'Vợt cầu lông', to: '/products' },
               { label: 'Giày cầu lông', to: '/products' },

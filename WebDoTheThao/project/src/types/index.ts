@@ -1,4 +1,4 @@
-export type CategoryProductGroup = 'badminton' | 'tennis' | 'pickleball' | 'other';
+export type CategoryProductGroup = 'badminton' | 'tennis' | 'pickleball' | 'other' | string;
 
 export interface Category {
   id: string;
