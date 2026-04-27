@@ -1,0 +1,21 @@
+$kind: http-request
+url: "{{baseUrl}}/api/auth/login"
+method: POST
+headers:
+  Content-Type: application/json
+body:
+  type: text
+  content: |-
+    {
+      "email": "{{staffEmail}}",
+      "password": "{{staffPassword}}"
+    }
+scripts:
+  - type: afterResponse
+    code: |-
+      pm.test('status 200', function () { pm.response.to.have.status(200); });
+      const body = pm.response.json() || {};
+      const token = body?.data?.access_token || '';
+      if (token) pm.collectionVariables.set('accessToken', token);
+    language: text/javascript
+order: 1000

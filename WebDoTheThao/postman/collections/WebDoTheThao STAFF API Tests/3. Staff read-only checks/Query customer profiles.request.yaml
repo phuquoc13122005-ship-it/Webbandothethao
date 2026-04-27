@@ -1,0 +1,18 @@
+$kind: http-request
+url: "{{baseUrl}}/api/db/query"
+method: POST
+headers:
+  Content-Type: application/json
+body:
+  type: text
+  content: |-
+    {
+      "table": "profiles",
+      "select": "id,full_name,email,phone,address,role,created_at",
+      "filters": [
+        { "column": "role", "op": "eq", "value": "customer" }
+      ],
+      "order": { "column": "created_at", "ascending": false },
+      "limit": 50
+    }
+order: 1000

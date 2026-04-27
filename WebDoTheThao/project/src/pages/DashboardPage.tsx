@@ -18,6 +18,7 @@ import {
 
 type Tab = 'orders' | 'profile' | 'account_settings';
 type OrderFilterStatus = 'all' | Order['status'];
+const USER_ORDERS_PER_PAGE = 30;
 
 function formatPasswordErrorMessage(error: any) {
   const code = String(error?.message || '');
@@ -64,9 +65,11 @@ export default function DashboardPage() {
   const [passwordSuccess, setPasswordSuccess] = useState('');
   const [detailOrder, setDetailOrder] = useState<Order | null>(null);
   const [filterStatus, setFilterStatus] = useState<OrderFilterStatus>('all');
+  const [filterKeyword, setFilterKeyword] = useState('');
   const [filterDateFrom, setFilterDateFrom] = useState('');
   const [filterDateTo, setFilterDateTo] = useState('');
   const [hasInitializedDateFilters, setHasInitializedDateFilters] = useState(false);
+  const [userOrdersPage, setUserOrdersPage] = useState(1);
   const [cancelOrder, setCancelOrder] = useState<Order | null>(null);
   const [cancelReason, setCancelReason] = useState<CancelReason | ''>('');
   const [cancelReasonDetail, setCancelReasonDetail] = useState('');
@@ -267,7 +270,7 @@ export default function DashboardPage() {
     try {
       await Promise.all(
         order.order_items.map(item =>
-          addToCart(item.product_id, item.quantity, item.shoe_size ?? null),
+          addToCart(item.product_id, item.quantity, String(item.size_label || item.shoe_size || '').trim() || null),
         ),
       );
       navigate('/cart');
@@ -297,7 +300,44 @@ export default function DashboardPage() {
     }
 
     const normalizedDetail = normalizeCancelDetail(cancelReasonDetail);
-    const cancelledAt = new Date().toISOString();
+    const persistCancelReason = async (orderId: string) => {
+      const { error: persistError } = await db
+        .from('orders')
+        .update({
+          cancel_reason: cancelReason,
+          cancel_reason_detail: normalizedDetail,
+        })
+        .eq('id', orderId)
+        .eq('user_id', user.id)
+        .eq('status', 'cancelled');
+      if (persistError) return false;
+      return true;
+    };
+    const reconcileCancelledOrder = async () => {
+      const { data: latestOrder, error: latestOrderError } = await db
+        .from('orders')
+        .select('*, order_items(*, products(*))')
+        .eq('id', cancelOrder.id)
+        .eq('user_id', user.id)
+        .maybeSingle();
+      if (latestOrderError || !latestOrder) return false;
+      if (String(latestOrder.status || '').toLowerCase() !== 'cancelled') return false;
+      if (!latestOrder.cancel_reason) {
+        await persistCancelReason(latestOrder.id);
+      }
+      setOrders(prev => prev.map(order => (
+        order.id === latestOrder.id
+          ? {
+              ...latestOrder,
+              cancel_reason: latestOrder.cancel_reason || null,
+              cancel_reason_detail: latestOrder.cancel_reason_detail || null,
+              cancelled_at: latestOrder.cancelled_at || null,
+            }
+          : order
+      )));
+      closeCancelModal();
+      return true;
+    };
     setCancelSubmitting(true);
     setCancelError('');
 
@@ -308,24 +348,23 @@ export default function DashboardPage() {
       return;
     }
 
+    const cancellableStatusValues = ['pending', 'confirmed', 'chờ xác nhận', 'cho xac nhan', 'đã xác nhận', 'da xac nhan'];
     const { data: updatedOrder, error } = await db
       .from('orders')
       .update({
         status: 'cancelled',
         cancel_reason: cancelReason,
         cancel_reason_detail: normalizedDetail,
-        cancelled_at: cancelledAt,
       })
       .eq('id', cancelOrder.id)
       .eq('user_id', user.id)
-      .in('status', ['pending', 'confirmed'])
+      .in('status', cancellableStatusValues)
       .select('*, order_items(*, products(*))')
       .maybeSingle();
 
     const missingCancelColumns =
       error?.message?.includes('cancel_reason') ||
-      error?.message?.includes('cancel_reason_detail') ||
-      error?.message?.includes('cancelled_at');
+      error?.message?.includes('cancel_reason_detail');
 
     if ((error || !updatedOrder) && missingCancelColumns) {
       const { data: fallbackOrder, error: fallbackError } = await db
@@ -333,38 +372,41 @@ export default function DashboardPage() {
         .update({ status: 'cancelled' })
         .eq('id', cancelOrder.id)
         .eq('user_id', user.id)
-        .in('status', ['pending', 'confirmed'])
+        .in('status', cancellableStatusValues)
         .select('*, order_items(*, products(*))')
         .maybeSingle();
 
       if (fallbackError || !fallbackOrder) {
+        if (!fallbackError && await reconcileCancelledOrder()) {
+          return;
+        }
         setCancelError('Không thể hủy đơn hàng lúc này. Vui lòng thử lại.');
         setCancelSubmitting(false);
         return;
       }
 
-      setOrders(prev =>
-        prev.map(order =>
-          order.id === fallbackOrder.id
-            ? {
-                ...fallbackOrder,
-                cancel_reason: cancelReason,
-                cancel_reason_detail: normalizedDetail,
-                cancelled_at: cancelledAt,
-              }
-            : order,
-        ),
-      );
+      await persistCancelReason(fallbackOrder.id);
+      if (await reconcileCancelledOrder()) {
+        return;
+      }
+      setOrders(prev => prev.map(order => (order.id === fallbackOrder.id ? fallbackOrder : order)));
       closeCancelModal();
       return;
     }
 
     if (error || !updatedOrder) {
+      if (!error && await reconcileCancelledOrder()) {
+        return;
+      }
       setCancelError('Không thể hủy đơn hàng lúc này. Vui lòng thử lại.');
       setCancelSubmitting(false);
       return;
     }
 
+    await persistCancelReason(updatedOrder.id);
+    if (await reconcileCancelledOrder()) {
+      return;
+    }
     setOrders(prev => prev.map(order => (order.id === updatedOrder.id ? updatedOrder : order)));
     closeCancelModal();
   };
@@ -386,6 +428,7 @@ export default function DashboardPage() {
     delivered: orders.filter(o => o.status === 'delivered').length,
   };
 
+  const normalizedKeyword = filterKeyword.trim().toLowerCase();
   const filteredOrders = orders.filter(order => {
     if (filterStatus !== 'all' && order.status !== filterStatus) {
       return false;
@@ -406,13 +449,31 @@ export default function DashboardPage() {
       if (createdAt > to) return false;
     }
 
+    if (normalizedKeyword) {
+      const orderIdMatch = String(order.id || '').toLowerCase().includes(normalizedKeyword);
+      const productMatch = (order.order_items || []).some(item =>
+        String(item.products?.name || '').toLowerCase().includes(normalizedKeyword),
+      );
+      if (!orderIdMatch && !productMatch) {
+        return false;
+      }
+    }
+
     return true;
   });
+  const userOrdersTotalPages = Math.max(1, Math.ceil(filteredOrders.length / USER_ORDERS_PER_PAGE));
+  const normalizedUserOrdersPage = Math.min(userOrdersPage, userOrdersTotalPages);
+  const paginatedOrders = filteredOrders.slice(
+    (normalizedUserOrdersPage - 1) * USER_ORDERS_PER_PAGE,
+    normalizedUserOrdersPage * USER_ORDERS_PER_PAGE,
+  );
 
   const resetFilters = () => {
     setFilterStatus('all');
+    setFilterKeyword('');
     setFilterDateFrom('');
     setFilterDateTo('');
+    setUserOrdersPage(1);
   };
 
   const paymentMethodLabel = (method: Order['payment_method']) => {
@@ -492,12 +553,28 @@ export default function DashboardPage() {
               <h2 className="text-xl font-bold text-gray-900 mb-6">Đơn hàng của tôi</h2>
 
               <div className="bg-white rounded-2xl border border-gray-100 p-4 sm:p-5 mb-4">
-                <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
+                <div className="grid grid-cols-1 md:grid-cols-5 gap-3">
+                  <div>
+                    <label className="block text-xs font-medium text-gray-500 mb-1">Tìm kiếm</label>
+                    <input
+                      type="text"
+                      value={filterKeyword}
+                      onChange={event => {
+                        setFilterKeyword(event.target.value);
+                        setUserOrdersPage(1);
+                      }}
+                      placeholder="Mã đơn hoặc tên sản phẩm"
+                      className="w-full h-10 px-3 border border-gray-200 rounded-lg text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-teal-500/30 focus:border-teal-400"
+                    />
+                  </div>
                   <div>
                     <label className="block text-xs font-medium text-gray-500 mb-1">Trạng thái</label>
                     <select
                       value={filterStatus}
-                      onChange={event => setFilterStatus(event.target.value as OrderFilterStatus)}
+                      onChange={event => {
+                        setFilterStatus(event.target.value as OrderFilterStatus);
+                        setUserOrdersPage(1);
+                      }}
                       className="w-full h-10 px-3 border border-gray-200 rounded-lg text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-teal-500/30 focus:border-teal-400"
                     >
                       <option value="all">Tất cả</option>
@@ -516,6 +593,7 @@ export default function DashboardPage() {
                       onChange={event => {
                         const nextFrom = event.target.value;
                         setFilterDateFrom(nextFrom);
+                        setUserOrdersPage(1);
                         if (filterDateTo && nextFrom && filterDateTo < nextFrom) {
                           setFilterDateTo(nextFrom);
                         }
@@ -532,6 +610,7 @@ export default function DashboardPage() {
                       value={filterDateTo}
                       onChange={event => {
                         const nextTo = event.target.value;
+                        setUserOrdersPage(1);
                         if (filterDateFrom && nextTo && nextTo < filterDateFrom) {
                           setFilterDateTo(filterDateFrom);
                           return;
@@ -578,7 +657,7 @@ export default function DashboardPage() {
                 </div>
               ) : (
                 <div className="space-y-4">
-                  {filteredOrders.map(order => (
+                  {paginatedOrders.map(order => (
                     <div key={order.id} className="bg-white rounded-2xl border border-gray-100 overflow-hidden">
                       <div className="px-6 py-4 border-b border-gray-50 flex flex-wrap items-center justify-between gap-4">
                         <div className="flex items-center gap-4">
@@ -633,7 +712,7 @@ export default function DashboardPage() {
                                 <p className="text-sm font-medium text-gray-900 truncate">{item.products?.name}</p>
                                 <p className="text-xs text-gray-500">
                                   x{item.quantity}
-                                  {item.shoe_size ? ` - Size ${item.shoe_size}` : ''}
+                                  {(item.size_label || item.shoe_size) ? ` - Size ${item.size_label || item.shoe_size}` : ''}
                                   {' - '}
                                   {formatPrice(item.price)}
                                 </p>
@@ -657,6 +736,27 @@ export default function DashboardPage() {
                       </div>
                     </div>
                   ))}
+                  <div className="flex items-center justify-end gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setUserOrdersPage(prev => Math.max(1, prev - 1))}
+                      disabled={normalizedUserOrdersPage <= 1}
+                      className="h-9 px-3 rounded-lg text-sm font-medium text-gray-700 bg-gray-100 hover:bg-gray-200 disabled:opacity-50"
+                    >
+                      Trước
+                    </button>
+                    <span className="text-sm text-gray-600">
+                      Trang {normalizedUserOrdersPage}/{userOrdersTotalPages}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => setUserOrdersPage(prev => Math.min(userOrdersTotalPages, prev + 1))}
+                      disabled={normalizedUserOrdersPage >= userOrdersTotalPages}
+                      className="h-9 px-3 rounded-lg text-sm font-medium text-gray-700 bg-gray-100 hover:bg-gray-200 disabled:opacity-50"
+                    >
+                      Sau
+                    </button>
+                  </div>
                 </div>
               )}
             </div>
@@ -916,7 +1016,7 @@ export default function DashboardPage() {
                           <p className="text-sm font-medium text-gray-900 truncate">{item.products?.name || 'Sản phẩm'}</p>
                           <p className="text-xs text-gray-500">
                             x{item.quantity}
-                            {item.shoe_size ? ` - Size ${item.shoe_size}` : ''}
+                            {(item.size_label || item.shoe_size) ? ` - Size ${item.size_label || item.shoe_size}` : ''}
                           </p>
                         </div>
                         <p className="text-sm font-semibold text-gray-900">{formatPrice(item.price * item.quantity)}</p>

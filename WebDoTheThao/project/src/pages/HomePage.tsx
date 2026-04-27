@@ -80,7 +80,7 @@ export default function HomePage() {
     if (banner.target_type === 'product') {
       const productSlug = String(
         banner.target_product_slug
-        || (banner.target_product_id ? productSlugById.get(banner.target_product_id) : '')
+        || (banner.target_product_id ? productSlugById.get(String(banner.target_product_id)) : '')
         || '',
       ).trim();
       return productSlug ? `/products/${productSlug}` : null;
@@ -88,7 +88,7 @@ export default function HomePage() {
     if (banner.target_type === 'category') {
       const categorySlug = String(
         banner.target_category_slug
-        || (banner.target_category_id ? categorySlugById.get(banner.target_category_id) : '')
+        || (banner.target_category_id ? categorySlugById.get(String(banner.target_category_id)) : '')
         || '',
       ).trim();
       return categorySlug ? `/products?category=${encodeURIComponent(categorySlug)}` : null;
@@ -255,55 +255,46 @@ export default function HomePage() {
             <div
               key={slide.id}
               className={`absolute inset-0 transition-opacity duration-700 ${
-                index === heroSlideIndex ? 'opacity-30' : 'opacity-0'
+                index === heroSlideIndex ? 'opacity-100' : 'opacity-0'
               }`}
             >
-              <img
-                src={slide.image_url}
-                alt={slide.title || `Banner ${index + 1}`}
-                className="absolute inset-0 w-full h-full object-cover"
-              />
               {(() => {
+                const isActive = index === heroSlideIndex;
                 const targetHref = getBannerTargetHref(slide);
-                if (!targetHref) return null;
+                const mediaClassName = `absolute inset-0 w-full h-full object-cover transition-transform duration-700 ${
+                  isActive ? 'scale-100' : 'scale-105'
+                }`;
+                const wrapperClassName = `absolute inset-0 block ${isActive ? 'pointer-events-auto' : 'pointer-events-none'}`;
+                if (!targetHref) {
+                  return (
+                    <div className={wrapperClassName}>
+                      <img
+                        src={slide.image_url}
+                        alt={slide.title || `Banner ${index + 1}`}
+                        className={mediaClassName}
+                      />
+                    </div>
+                  );
+                }
                 return (
                   <Link
                     to={targetHref}
                     aria-label={slide.title ? `Mở banner ${slide.title}` : `Mở banner ${index + 1}`}
-                    className={`absolute inset-0 ${index === heroSlideIndex ? 'pointer-events-auto' : 'pointer-events-none'}`}
-                  />
+                    className={wrapperClassName}
+                  >
+                    <img
+                      src={slide.image_url}
+                      alt={slide.title || `Banner ${index + 1}`}
+                      className={mediaClassName}
+                    />
+                  </Link>
                 );
               })()}
             </div>
           ))}
-          <div className="absolute inset-0 pointer-events-none bg-gradient-to-r from-gray-900/90 via-gray-900/70 to-transparent" />
+          <div className="absolute inset-0 pointer-events-none bg-black/10" />
         </div>
-        <div className="relative max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-24 lg:py-36">
-          <div className="max-w-2xl">
-            <div className="inline-flex items-center gap-2 px-4 py-2 bg-teal-500/10 border border-teal-500/20 rounded-full mb-8">
-              <Flame className="w-4 h-4 text-teal-400" />
-              <span className="text-sm font-medium text-teal-300">Giảm giá đến 50% - Mua ngay!</span>
-            </div>
-            <h1 className="text-4xl sm:text-5xl lg:text-6xl font-bold text-white leading-tight mb-6">
-              Đồ thể thao<br />
-              <span className="text-transparent bg-clip-text bg-gradient-to-r from-teal-400 to-emerald-400">
-                chính hãng
-              </span>
-            </h1>
-            <p className="text-lg text-gray-300 mb-10 max-w-lg leading-relaxed">
-              Khám phá bộ sưu tập đồ thể thao từ các thương hiệu hàng đầu thế giới. Chất lượng vượt trội, giá cả hợp lý.
-            </p>
-            <div className="flex flex-wrap gap-4">
-              <Link
-                to="/products"
-                className="inline-flex items-center gap-2 px-8 py-4 bg-gradient-to-r from-teal-500 to-emerald-600 text-white font-semibold rounded-2xl hover:shadow-xl hover:shadow-teal-500/25 transition-all active:scale-[0.98]"
-              >
-                Mua sắm ngay
-                <ArrowRight className="w-5 h-5" />
-              </Link>
-            </div>
-          </div>
-        </div>
+        <div className="relative h-[280px] sm:h-[360px] lg:h-[460px] pointer-events-none" />
         {heroSlides.length > 1 && (
           <>
             <button

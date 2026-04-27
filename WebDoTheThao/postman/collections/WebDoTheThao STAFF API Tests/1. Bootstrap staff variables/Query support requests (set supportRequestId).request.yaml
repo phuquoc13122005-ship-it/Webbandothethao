@@ -1,0 +1,25 @@
+$kind: http-request
+url: "{{baseUrl}}/api/db/query"
+method: POST
+headers:
+  Content-Type: application/json
+body:
+  type: text
+  content: |-
+    {
+      "table": "support_requests",
+      "select": "*",
+      "order": { "column": "created_at", "ascending": false },
+      "limit": 10
+    }
+scripts:
+  - type: afterResponse
+    code: >-
+      pm.test('status 200', function () { pm.response.to.have.status(200); });
+
+      const rows = pm.response.json()?.data || [];
+
+      if (Array.isArray(rows) && rows.length > 0)
+      pm.collectionVariables.set('supportRequestId', rows[0].id || '');
+    language: text/javascript
+order: 2000

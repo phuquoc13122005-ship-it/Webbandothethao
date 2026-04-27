@@ -8,6 +8,7 @@ cloudResources:
   collections:
     ..\postman\collections\WebDoTheThao USER API Tests: 0973e59e-024f-461c-96df-a97a9eca24a3
     ..\postman\collections\WebDoTheThao ADMIN API Tests: 624ec1cb-afe4-4b24-95cf-345338b7a7b8
+    ..\postman\collections\WebDoTheThao STAFF API Tests: b3d865b2-485d-4169-85bf-f4d4ef65ddc7
 
 # All resources in the `postman/` folder are automatically registered in Local View.
 # Point to additional files outside the `postman/` folder to register them individually. Example:

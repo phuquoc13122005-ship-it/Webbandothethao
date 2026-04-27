@@ -8,6 +8,7 @@ import { buildVietQrImageUrl, formatCountdown, getDefaultQrExpiry } from '../lib
 import { prependGoogleOrder } from '../lib/googleLocalData';
 import { useAuth } from '../contexts/AuthContext';
 import { useCart } from '../contexts/CartContext';
+import type { Product } from '../types';
 import {
   clearCheckoutDraft,
   mapCartItemsToCheckoutDraft,
@@ -43,6 +44,29 @@ interface AvailablePromotionItem {
 
 function createTransferReference(userId: string) {
   return `DH-${userId.slice(0, 6).toUpperCase()}-${Date.now().toString().slice(-6)}`;
+}
+
+function parseSizeOptions(rawValue?: string | null) {
+  return String(rawValue || '')
+    .split(/[;,]/)
+    .map(item => item.trim())
+    .filter(Boolean);
+}
+
+function getSelectableSizes(product?: Product | null) {
+  if (!product) return [] as string[];
+  const options = parseSizeOptions(product.size_options);
+  if (options.length > 0) return options;
+  const sizeType = product.size_type || product.categories?.size_type || 'none';
+  if (sizeType === 'shoes') return ['36', '37', '38', '39', '40', '41', '42'];
+  if (sizeType === 'apparel') return ['S', 'M', 'L', 'XL', '2XL'];
+  return [];
+}
+
+function toNumericShoeSize(selectedSize?: string | null) {
+  const normalized = String(selectedSize || '').trim();
+  if (!normalized || !/^\d+$/.test(normalized)) return null;
+  return Number(normalized);
 }
 
 export default function CheckoutPage() {
@@ -241,9 +265,13 @@ export default function CheckoutPage() {
 
     if (!validateForm()) return;
 
-    const hasMissingSize = checkoutItems.some(item => item.shoe_size == null);
+    const hasMissingSize = checkoutItems.some(item => {
+      const matchedCartItem = items.find(cartItem => cartItem.id === item.id)
+        || items.find(cartItem => cartItem.product_id === item.product_id);
+      return getSelectableSizes(matchedCartItem?.products).length > 0 && !String(item.selected_size || '').trim();
+    });
     if (hasMissingSize) {
-      window.alert('Vui lòng chọn size giày trước khi thanh toán.');
+      window.alert('Vui lòng chọn size sản phẩm trước khi thanh toán.');
       return;
     }
     if (paymentMethod === 'bank_transfer' && isQrExpired) {
@@ -278,14 +306,15 @@ export default function CheckoutPage() {
             const matchedCartItem = items.find(
               cartItem =>
                 cartItem.product_id === item.product_id &&
-                (cartItem.shoe_size ?? null) === (item.shoe_size ?? null),
+                String(cartItem.selected_size || cartItem.shoe_size || '') === String(item.selected_size || item.shoe_size || ''),
             );
 
             return {
               id: `google-item-${item.product_id}-${createdAt}`,
               order_id: orderId,
               product_id: item.product_id,
-              shoe_size: item.shoe_size ?? null,
+              shoe_size: toNumericShoeSize(item.selected_size),
+              size_label: String(item.selected_size || '').trim() || null,
               quantity: item.quantity,
               price: item.price,
               products: matchedCartItem?.products,
@@ -301,7 +330,8 @@ export default function CheckoutPage() {
           shippingAddress: `${shippingAddress} (${paymentMethod === 'cod' ? 'COD' : 'Chuyển khoản'})`,
           items: checkoutItems.map(item => ({
             product_id: item.product_id,
-            shoe_size: item.shoe_size ?? null,
+            shoe_size: toNumericShoeSize(item.selected_size),
+            size_label: String(item.selected_size || '').trim() || null,
             quantity: item.quantity,
             price: item.price,
           })),
@@ -358,7 +388,7 @@ export default function CheckoutPage() {
                     <p className="font-medium text-gray-900 truncate">{item.product_name}</p>
                     <p className="text-sm text-gray-500">
                       Số lượng: {item.quantity}
-                      {item.shoe_size ? ` - Size ${item.shoe_size}` : ''}
+                      {(item.selected_size || item.shoe_size) ? ` - Size ${item.selected_size || item.shoe_size}` : ''}
                     </p>
                     <p className="text-sm text-gray-500">Đơn giá: {formatPrice(item.price)}</p>
                   </div>

@@ -4,13 +4,29 @@ import { useAuth } from '../contexts/AuthContext';
 import { useCart } from '../contexts/CartContext';
 import { formatPrice } from '../lib/formatters';
 import { mapCartItemsToCheckoutDraft, saveCheckoutDraft } from '../lib/checkoutSession';
+import type { Product } from '../types';
+
+function parseSizeOptions(rawValue?: string | null) {
+  return String(rawValue || '')
+    .split(/[;,]/)
+    .map(item => item.trim())
+    .filter(Boolean);
+}
+
+function getSelectableSizes(product?: Product | null) {
+  if (!product) return [] as string[];
+  const options = parseSizeOptions(product.size_options);
+  if (options.length > 0) return options;
+  const sizeType = product.size_type || product.categories?.size_type || 'none';
+  if (sizeType === 'shoes') return ['36', '37', '38', '39', '40', '41', '42'];
+  if (sizeType === 'apparel') return ['S', 'M', 'L', 'XL', '2XL'];
+  return [];
+}
 
 export default function CartPage() {
   const { user } = useAuth();
   const { items, loading, total, updateQuantity, updateItemSize, removeFromCart } = useCart();
   const navigate = useNavigate();
-  const shoeSizes = Array.from({ length: 10 }, (_, i) => i + 36);
-
   if (!user) {
     return (
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-24 text-center">
@@ -54,9 +70,12 @@ export default function CartPage() {
   }
 
   const handleCheckout = async () => {
-    const hasMissingSize = items.some(item => item.shoe_size == null);
+    const hasMissingSize = items.some(item => {
+      const sizeOptions = getSelectableSizes(item.products);
+      return sizeOptions.length > 0 && !String(item.selected_size || '').trim();
+    });
     if (hasMissingSize) {
-      window.alert('Vui lòng chọn size giày trước khi xác nhận đặt hàng.');
+      window.alert('Vui lòng chọn size sản phẩm trước khi xác nhận đặt hàng.');
       return;
     }
     saveCheckoutDraft(user.id, mapCartItemsToCheckoutDraft(items));
@@ -103,21 +122,25 @@ export default function CartPage() {
 
                 <div className="flex items-end justify-between mt-4">
                   <div className="flex flex-col gap-3">
-                    <div className="flex items-center gap-2">
-                      <label className="text-xs text-gray-500">Size:</label>
-                      <select
-                        value={item.shoe_size ?? ''}
-                        onChange={e => updateItemSize(item.id, e.target.value ? Number(e.target.value) : null)}
-                        className="h-8 px-2 border border-gray-200 rounded-lg text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-teal-500/30 focus:border-teal-400"
-                      >
-                        <option value="">Chọn size</option>
-                        {shoeSizes.map(size => (
-                          <option key={size} value={size}>
-                            {size}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
+                    {getSelectableSizes(item.products).length > 0 ? (
+                      <div className="flex items-center gap-2">
+                        <label className="text-xs text-gray-500">Size:</label>
+                        <select
+                          value={item.selected_size ?? ''}
+                          onChange={e => updateItemSize(item.id, e.target.value ? e.target.value : null)}
+                          className="h-8 px-2 border border-gray-200 rounded-lg text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-teal-500/30 focus:border-teal-400"
+                        >
+                          <option value="">Chọn size</option>
+                          {getSelectableSizes(item.products).map(size => (
+                            <option key={size} value={size}>
+                              {size}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                    ) : (
+                      <p className="text-xs text-gray-500">Size: Không áp dụng</p>
+                    )}
                     <div className="flex items-center gap-0 border border-gray-200 rounded-lg overflow-hidden">
                       <button
                         onClick={() => updateQuantity(item.id, item.quantity - 1)}

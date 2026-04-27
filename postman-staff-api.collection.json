@@ -1,0 +1,252 @@
+{
+  "info": {
+    "name": "WebDoTheThao STAFF API Tests",
+    "_postman_id": "e4d69e2e-7394-47b1-9c36-29c38f5c1f4c",
+    "description": "Collection test API cho luong Staff.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "baseUrl", "value": "http://localhost:4000" },
+    { "key": "staffEmail", "value": "staff.postman@example.com" },
+    { "key": "staffPassword", "value": "123456" },
+    { "key": "accessToken", "value": "" },
+    { "key": "orderId", "value": "" },
+    { "key": "supportRequestId", "value": "" },
+    { "key": "productId", "value": "" },
+    { "key": "newStock", "value": "25" }
+  ],
+  "item": [
+    {
+      "name": "0. Staff login",
+      "item": [
+        {
+          "name": "Login staff",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 200', function () { pm.response.to.have.status(200); });",
+                  "const body = pm.response.json() || {};",
+                  "const token = body?.data?.access_token || '';",
+                  "if (token) pm.collectionVariables.set('accessToken', token);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{staffEmail}}\",\n  \"password\": \"{{staffPassword}}\"\n}"
+            },
+            "url": "{{baseUrl}}/api/auth/login"
+          }
+        },
+        {
+          "name": "Session",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/auth/session"
+          }
+        },
+        {
+          "name": "Current user (Bearer)",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{accessToken}}" }],
+            "url": "{{baseUrl}}/api/auth/user"
+          }
+        }
+      ]
+    },
+    {
+      "name": "1. Bootstrap staff variables",
+      "item": [
+        {
+          "name": "Query orders (set orderId)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 200', function () { pm.response.to.have.status(200); });",
+                  "const rows = pm.response.json()?.data || [];",
+                  "if (Array.isArray(rows) && rows.length > 0) pm.collectionVariables.set('orderId', rows[0].id || '');"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"table\": \"orders\",\n  \"select\": \"id,user_id,status,total,created_at\",\n  \"order\": { \"column\": \"created_at\", \"ascending\": false },\n  \"limit\": 10\n}"
+            },
+            "url": "{{baseUrl}}/api/db/query"
+          }
+        },
+        {
+          "name": "Query support requests (set supportRequestId)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 200', function () { pm.response.to.have.status(200); });",
+                  "const rows = pm.response.json()?.data || [];",
+                  "if (Array.isArray(rows) && rows.length > 0) pm.collectionVariables.set('supportRequestId', rows[0].id || '');"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"table\": \"support_requests\",\n  \"select\": \"*\",\n  \"order\": { \"column\": \"created_at\", \"ascending\": false },\n  \"limit\": 10\n}"
+            },
+            "url": "{{baseUrl}}/api/db/query"
+          }
+        },
+        {
+          "name": "Query products (set productId)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 200', function () { pm.response.to.have.status(200); });",
+                  "const rows = pm.response.json()?.data || [];",
+                  "if (Array.isArray(rows) && rows.length > 0) pm.collectionVariables.set('productId', rows[0].id || '');"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"table\": \"products\",\n  \"select\": \"id,name,slug,stock,size_stock,created_at\",\n  \"order\": { \"column\": \"created_at\", \"ascending\": false },\n  \"limit\": 10\n}"
+            },
+            "url": "{{baseUrl}}/api/db/query"
+          }
+        }
+      ]
+    },
+    {
+      "name": "2. Staff operations",
+      "item": [
+        {
+          "name": "Update order status to shipping",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"table\": \"orders\",\n  \"values\": { \"status\": \"shipping\" },\n  \"filters\": [\n    { \"column\": \"id\", \"op\": \"eq\", \"value\": \"{{orderId}}\" }\n  ],\n  \"select\": \"*\"\n}"
+            },
+            "url": "{{baseUrl}}/api/db/update"
+          }
+        },
+        {
+          "name": "Update order status to confirmed",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"table\": \"orders\",\n  \"values\": { \"status\": \"confirmed\" },\n  \"filters\": [\n    { \"column\": \"id\", \"op\": \"eq\", \"value\": \"{{orderId}}\" }\n  ],\n  \"select\": \"*\"\n}"
+            },
+            "url": "{{baseUrl}}/api/db/update"
+          }
+        },
+        {
+          "name": "Update support status to in_progress",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"table\": \"support_requests\",\n  \"values\": { \"status\": \"in_progress\" },\n  \"filters\": [\n    { \"column\": \"id\", \"op\": \"eq\", \"value\": \"{{supportRequestId}}\" }\n  ],\n  \"select\": \"*\"\n}"
+            },
+            "url": "{{baseUrl}}/api/db/update"
+          }
+        },
+        {
+          "name": "Update support status to resolved",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"table\": \"support_requests\",\n  \"values\": { \"status\": \"resolved\" },\n  \"filters\": [\n    { \"column\": \"id\", \"op\": \"eq\", \"value\": \"{{supportRequestId}}\" }\n  ],\n  \"select\": \"*\"\n}"
+            },
+            "url": "{{baseUrl}}/api/db/update"
+          }
+        },
+        {
+          "name": "Update product stock",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"table\": \"products\",\n  \"values\": { \"stock\": {{newStock}} },\n  \"filters\": [\n    { \"column\": \"id\", \"op\": \"eq\", \"value\": \"{{productId}}\" }\n  ],\n  \"select\": \"*\"\n}"
+            },
+            "url": "{{baseUrl}}/api/db/update"
+          }
+        }
+      ]
+    },
+    {
+      "name": "3. Staff read-only checks",
+      "item": [
+        {
+          "name": "Query customer profiles",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"table\": \"profiles\",\n  \"select\": \"id,full_name,email,phone,address,role,created_at\",\n  \"filters\": [\n    { \"column\": \"role\", \"op\": \"eq\", \"value\": \"customer\" }\n  ],\n  \"order\": { \"column\": \"created_at\", \"ascending\": false },\n  \"limit\": 50\n}"
+            },
+            "url": "{{baseUrl}}/api/db/query"
+          }
+        },
+        {
+          "name": "Query branches",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"table\": \"branches\",\n  \"select\": \"*\",\n  \"order\": { \"column\": \"name\", \"ascending\": true },\n  \"limit\": 20\n}"
+            },
+            "url": "{{baseUrl}}/api/db/query"
+          }
+        }
+      ]
+    },
+    {
+      "name": "4. Logout staff",
+      "item": [
+        {
+          "name": "Logout",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/api/auth/logout"
+          }
+        }
+      ]
+    }
+  ]
+}

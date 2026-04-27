@@ -6,6 +6,7 @@ import type { Product, Category } from '../types';
 import ProductCard from '../components/ui/ProductCard';
 
 type SortOption = 'newest' | 'price_asc' | 'price_desc' | 'rating';
+const PRODUCTS_PER_PAGE = 15;
 const DISCOUNT_FILTER_OPTIONS = [20, 30, 40, 50, 60];
 const PRICE_FILTER_OPTIONS = [
   { value: 'under_500k', label: 'Giá dưới 500.000đ', min: 0, max: 500000 },
@@ -14,31 +15,6 @@ const PRICE_FILTER_OPTIONS = [
   { value: '2m_3m', label: '2 - 3 triệu', min: 2000000, max: 3000000 },
   { value: 'above_3m', label: 'Giá trên 3 triệu', min: 3000000, max: Number.POSITIVE_INFINITY },
 ] as const;
-const BRANCH_OPTIONS = [
-  'VNB Super Center',
-  'VNB PREMIUM Quận 1',
-  'VNB PREMIUM Quận 11',
-  'VNB PREMIUM Bình Thạnh',
-  'VNB PREMIUM TP Thủ Đức',
-  'VNB Quận 1',
-  'VNB Quận 3',
-  'VNB Quận 5',
-  'VNB Quận 7',
-  'VNB Quận 10',
-  'VNB Quận 12',
-  'VNB Bình Thạnh',
-  'VNB Gò Vấp',
-  'VNB Tân Bình',
-  'VNB Tân Phú',
-  'VNB Bình Tân',
-  'VNB Cầu Giấy',
-  'VNB Đống Đa',
-  'VNB Hà Đông',
-  'VNB Hải Châu Đà Nẵng',
-  'VNB Thanh Khê Đà Nẵng',
-  'VNB Biên Hòa',
-  'VNB TP Vinh',
-];
 const AUDIENCE_FILTER_OPTIONS = [
   { value: 'nam', label: 'Nam', keywords: ['nam', 'men', 'male'] },
   { value: 'nu', label: 'Nữ', keywords: ['nữ', 'nu', 'women', 'female', 'lady'] },
@@ -163,11 +139,13 @@ export default function ProductsPage() {
   const [searchParams, setSearchParams] = useSearchParams();
   const [products, setProducts] = useState<Product[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
+  const [configuredBranches, setConfiguredBranches] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
   const [sortBy, setSortBy] = useState<SortOption>('newest');
   const [showFilters, setShowFilters] = useState(false);
   const [localSearch, setLocalSearch] = useState(searchParams.get('search') || '');
   const [branchKeyword, setBranchKeyword] = useState('');
+  const [currentPage, setCurrentPage] = useState(1);
 
   const selectedCategory = searchParams.get('category') || '';
   const searchQuery = searchParams.get('search') || '';
@@ -188,6 +166,20 @@ export default function ProductsPage() {
     db.from('categories').select('*').order('name').then(({ data }: { data: any[] | null }) => {
       setCategories(data || []);
     });
+  }, []);
+
+  useEffect(() => {
+    db.from('branches')
+      .select('name')
+      .order('name')
+      .then(({ data }: { data: Array<{ name?: string | null }> | null }) => {
+        const nextBranches = (data || [])
+          .map(item => String(item?.name || '').trim())
+          .filter(Boolean)
+          .filter((value, index, arr) => arr.indexOf(value) === index)
+          .sort((a, b) => a.localeCompare(b, 'vi'));
+        setConfiguredBranches(nextBranches);
+      });
   }, []);
 
   useEffect(() => {
@@ -268,11 +260,24 @@ export default function ProductsPage() {
     });
   }, [products]);
 
+  const branchOptions = useMemo(() => {
+    const branchesFromProducts = products
+      .flatMap(product => parseProductBranchValues(String((product as any).branch_name || (product as any).branch || '')))
+      .filter((value, index, arr) => arr.indexOf(value) === index)
+      .sort((a, b) => a.localeCompare(b, 'vi'));
+    const primaryList = configuredBranches.length > 0 ? configuredBranches : branchesFromProducts;
+    const merged = [...primaryList];
+    selectedBranches.forEach(branch => {
+      if (!merged.includes(branch)) merged.push(branch);
+    });
+    return merged;
+  }, [configuredBranches, products, selectedBranches]);
+
   const filteredBranchOptions = useMemo(() => {
     const keyword = branchKeyword.trim().toLowerCase();
-    if (!keyword) return BRANCH_OPTIONS;
-    return BRANCH_OPTIONS.filter(branch => branch.toLowerCase().includes(keyword));
-  }, [branchKeyword]);
+    if (!keyword) return branchOptions;
+    return branchOptions.filter(branch => branch.toLowerCase().includes(keyword));
+  }, [branchKeyword, branchOptions]);
 
   const activeCategory = categories.find(item => item.slug === selectedCategory) || null;
   const currentContext = useMemo<'shoes' | 'apparel' | 'general'>(() => {
@@ -395,6 +400,38 @@ export default function ProductsPage() {
     showSharedAdvancedFilters,
     showShoeAdvancedFilters,
     showApparelTypeFilter,
+  ]);
+
+  const totalPages = Math.max(1, Math.ceil(sorted.length / PRODUCTS_PER_PAGE));
+  const paginatedProducts = useMemo(() => {
+    const startIndex = (currentPage - 1) * PRODUCTS_PER_PAGE;
+    return sorted.slice(startIndex, startIndex + PRODUCTS_PER_PAGE);
+  }, [sorted, currentPage]);
+
+  useEffect(() => {
+    if (currentPage > totalPages) {
+      setCurrentPage(totalPages);
+    }
+  }, [currentPage, totalPages]);
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [
+    selectedCategory,
+    searchQuery,
+    saleOnly,
+    sortBy,
+    selectedDiscounts.join(','),
+    selectedPrices.join(','),
+    selectedBrands.join(','),
+    selectedSizes.join(','),
+    selectedBranches.join(','),
+    selectedAudiences.join(','),
+    selectedHighlights.join(','),
+    selectedShoeForms.join(','),
+    selectedPlayStyles.join(','),
+    selectedSegments.join(','),
+    selectedApparelTypes.join(','),
   ]);
 
   const handleSearch = (e: React.FormEvent) => {
@@ -941,11 +978,51 @@ export default function ProductsPage() {
               </button>
             </div>
           ) : (
-            <div className="grid grid-cols-2 lg:grid-cols-3 gap-4 lg:gap-6">
-              {sorted.map(product => (
-                <ProductCard key={product.id} product={product} />
-              ))}
-            </div>
+            <>
+              <div className="grid grid-cols-2 lg:grid-cols-3 gap-4 lg:gap-6">
+                {paginatedProducts.map(product => (
+                  <ProductCard key={product.id} product={product} />
+                ))}
+              </div>
+              {totalPages > 1 && (
+                <div className="mt-6 flex items-center justify-end gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
+                    disabled={currentPage === 1}
+                    className="h-9 px-3 rounded-lg border border-gray-200 bg-white text-sm text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+                  >
+                    Trước
+                  </button>
+                  {Array.from({ length: totalPages }).map((_, index) => {
+                    const pageNumber = index + 1;
+                    const isActive = pageNumber === currentPage;
+                    return (
+                      <button
+                        key={`page-${pageNumber}`}
+                        type="button"
+                        onClick={() => setCurrentPage(pageNumber)}
+                        className={`h-9 min-w-9 px-3 rounded-lg border text-sm ${
+                          isActive
+                            ? 'border-teal-600 bg-teal-600 text-white'
+                            : 'border-gray-200 bg-white text-gray-700 hover:bg-gray-50'
+                        }`}
+                      >
+                        {pageNumber}
+                      </button>
+                    );
+                  })}
+                  <button
+                    type="button"
+                    onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
+                    disabled={currentPage === totalPages}
+                    className="h-9 px-3 rounded-lg border border-gray-200 bg-white text-sm text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+                  >
+                    Sau
+                  </button>
+                </div>
+              )}
+            </>
           )}
         </div>
       </div>

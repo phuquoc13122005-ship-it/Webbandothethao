@@ -72,6 +72,7 @@ export interface CartItem {
   user_id: string;
   product_id: string;
   shoe_size?: number | null;
+  selected_size?: string | null;
   quantity: number;
   created_at: string;
   products?: Product;
@@ -96,6 +97,7 @@ export interface OrderItem {
   order_id: string;
   product_id: string;
   shoe_size?: number | null;
+  size_label?: string | null;
   quantity: number;
   price: number;
   products?: Product;
@@ -117,6 +119,7 @@ export interface SupportRequest {
   user_id: string | null;
   full_name: string;
   email: string;
+  phone?: string | null;
   subject: string;
   message: string;
   status: 'open' | 'in_progress' | 'resolved';

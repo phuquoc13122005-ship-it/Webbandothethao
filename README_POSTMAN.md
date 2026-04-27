@@ -1,11 +1,12 @@
-# Huong dan Postman de bao cao (tach User/Admin)
+# Huong dan Postman de bao cao (tach User/Admin/Staff)
 
-Tai lieu nay huong dan chi tiet cach chay Postman theo 2 luong rieng (`user` va `admin`) de de kiem tra va de tong hop bao cao.
+Tai lieu nay huong dan chi tiet cach chay Postman theo 3 luong rieng (`user`, `admin`, `staff`) de de kiem tra va de tong hop bao cao.
 
 ## 1) File su dung
 
 - `postman-user-api.collection.json` (collection test rieng cho user)
 - `postman-admin-api.collection.json` (collection test rieng cho admin)
+- `postman-staff-api.collection.json` (collection test rieng cho staff)
 - `postman-full-api.collection.json` (ban full all-in-one, giu de tham khao/chay tong)
 
 ## 2) Dieu kien truoc khi chay
@@ -21,6 +22,7 @@ Tai lieu nay huong dan chi tiet cach chay Postman theo 2 luong rieng (`user` va 
 2. Import 2 file:
    - `postman-user-api.collection.json`
    - `postman-admin-api.collection.json`
+   - `postman-staff-api.collection.json`
 3. (Tuy chon) import them `postman-full-api.collection.json` neu can chay all-in-one.
 
 ## 4) Cau hinh bien (variables)
@@ -48,6 +50,16 @@ Can cap nhat toi thieu:
 - `promotionCode`
 - `tempAccountEmail`
 - `tempAccountPassword`
+
+### 4.3 Collection Staff
+
+Can cap nhat toi thieu:
+
+- `baseUrl`
+- `staffEmail`
+- `staffPassword`
+- `accessToken` (se duoc set tu dong sau login)
+- `newStock` (so ton kho muon test update nhanh)
 
 ## 5) Thu tu chay khuyen nghi
 
@@ -93,6 +105,25 @@ Ket qua mong doi:
 - Query duoc cac bang admin hay dung (`branches`, `support_requests`)
 - Co the thong ke nhanh tong user va theo role (`customer/staff/admin`) trong folder `1. Bootstrap admin variables`
 - Co request `Query all orders (count total)` trong folder `1. Bootstrap admin variables` de thong ke tong don hang hien co
+
+### Buoc C - chay collection Staff
+
+Folder theo thu tu:
+
+1. `0. Staff login`
+2. `1. Bootstrap staff variables`
+3. `2. Staff operations`
+4. `3. Staff read-only checks`
+5. `4. Logout staff`
+
+Ket qua mong doi:
+
+- Dang nhap staff thanh cong (co session/access token)
+- Lay duoc `orderId`, `supportRequestId`, `productId`
+- Cap nhat duoc trang thai don hang (`confirmed/shipping`)
+- Cap nhat duoc trang thai yeu cau ho tro (`in_progress/resolved`)
+- Cap nhat duoc ton kho san pham
+- Xem duoc danh sach khach hang va chi nhanh de phuc vu ho tro van hanh
 
 ## 6) Script tu dong cap nhat bien
 
@@ -161,11 +192,13 @@ Sau khi run xong, chup man hinh:
 
 1. Collection Runner ket qua pass/fail cho User.
 2. Collection Runner ket qua pass/fail cho Admin.
-3. Response 200 cua cac API key:
+3. Collection Runner ket qua pass/fail cho Staff.
+4. Response 200 cua cac API key:
    - `auth/login`, `auth/session`
    - `promotions/create`, `promotions/assign`
    - `reviews/submit`, `reviews/moderate`
    - `db/insert`, `db/update`, `db/delete`
+   - `support_requests` va `orders` trong luong staff
 
 Checklist bao cao:
 

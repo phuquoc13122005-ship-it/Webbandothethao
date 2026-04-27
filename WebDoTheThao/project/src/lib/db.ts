@@ -187,6 +187,20 @@ const mysqlApiClient = {
     });
     return { data: result.data, error: result.error };
   },
+  async submitSupportRequest(payload: {
+    fullName: string;
+    email: string;
+    phone?: string;
+    message: string;
+  }) {
+    const result = await callApi('/api/support/submit', 'POST', {
+      full_name: payload.fullName,
+      email: payload.email,
+      phone: payload.phone || '',
+      message: payload.message,
+    });
+    return { data: result.data, error: result.error };
+  },
   async createPromotion(payload: {
     code: string;
     name: string;

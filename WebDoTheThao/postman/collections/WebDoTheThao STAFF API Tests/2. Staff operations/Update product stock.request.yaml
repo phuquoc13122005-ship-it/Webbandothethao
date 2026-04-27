@@ -1,0 +1,17 @@
+$kind: http-request
+url: "{{baseUrl}}/api/db/update"
+method: POST
+headers:
+  Content-Type: application/json
+body:
+  type: text
+  content: |-
+    {
+      "table": "products",
+      "values": { "stock": {{newStock}} },
+      "filters": [
+        { "column": "id", "op": "eq", "value": "{{productId}}" }
+      ],
+      "select": "*"
+    }
+order: 5000

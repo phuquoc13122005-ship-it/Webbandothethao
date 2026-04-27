@@ -440,7 +440,7 @@ export default function Header() {
             { label: 'Sale off', to: '/products?sale=1' },
             { label: 'Hướng dẫn', to: '/products' },
             { label: 'Giới thiệu', to: '/gioi-thieu' },
-            { label: 'Liên hệ', to: '/products' },
+            { label: 'Liên hệ', to: '/lien-he' },
           ].map(link => (
             <Link key={link.label} to={link.to} className="text-sm font-semibold text-white hover:text-white/80 transition-colors">
               {link.label}
@@ -468,6 +468,7 @@ export default function Header() {
               { label: 'Trang chủ', to: '/' },
               { label: 'Sản phẩm', to: '/products' },
               { label: 'Giới thiệu', to: '/gioi-thieu' },
+              { label: 'Liên hệ', to: '/lien-he' },
               { label: 'Sale off', to: '/products?sale=1' },
               { label: 'Vợt cầu lông', to: '/products' },
               { label: 'Giày cầu lông', to: '/products' },

@@ -1,0 +1,15 @@
+$kind: http-request
+url: "{{baseUrl}}/api/db/query"
+method: POST
+headers:
+  Content-Type: application/json
+body:
+  type: text
+  content: |-
+    {
+      "table": "branches",
+      "select": "*",
+      "order": { "column": "name", "ascending": true },
+      "limit": 20
+    }
+order: 2000

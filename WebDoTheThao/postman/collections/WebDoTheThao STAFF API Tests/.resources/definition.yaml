@@ -1,0 +1,11 @@
+$kind: collection
+description: Collection test API cho luong Staff.
+variables:
+  baseUrl: http://localhost:4000
+  staffEmail: staff.postman@example.com
+  staffPassword: "123456"
+  accessToken: ""
+  orderId: ""
+  supportRequestId: ""
+  productId: ""
+  newStock: "25"

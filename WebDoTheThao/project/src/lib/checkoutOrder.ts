@@ -3,6 +3,7 @@ type CheckoutOrderItemInput = {
   quantity: number;
   price: number;
   shoe_size: number | null;
+  size_label?: string | null;
 };
 
 type CreateCheckoutOrderInput = {

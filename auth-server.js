@@ -145,6 +145,8 @@ async function ensureProductAndCategoryOptionColumns() {
   await ensureColumn('categories', 'size_type', "varchar(20) not null default 'none'");
   await ensureColumn('categories', 'size_values', 'varchar(100) null');
   await ensureColumn('categories', 'product_group', "varchar(30) not null default 'badminton'");
+  await ensureColumn('cart_items', 'selected_size', 'varchar(50) null');
+  await ensureColumn('order_items', 'size_label', 'varchar(50) null');
 }
 
 async function ensureBannersTable() {
@@ -250,6 +252,17 @@ async function ensureSiteContentsTable() {
       'Shop thể thao của chúng tôi được xây dựng với mục tiêu mang sản phẩm chính hãng đến gần hơn với người dùng Việt Nam.\n\nĐội ngũ luôn kiểm soát chất lượng, tư vấn đúng nhu cầu và duy trì dịch vụ hậu mãi rõ ràng để khách hàng yên tâm mua sắm.\n\nChúng tôi không ngừng mở rộng danh mục, cập nhật mẫu mới và tối ưu trải nghiệm để phục vụ cộng đồng yêu thể thao tốt hơn mỗi ngày.',
     ],
   );
+
+  await runQuery(
+    `insert into site_contents (id, content_key, content_title, content_value)
+     values (?, 'contact_page', ?, ?)
+     on duplicate key update content_title = values(content_title)`,
+    [
+      randomUUID(),
+      'Liên hệ',
+      'Nếu bạn cần hỗ trợ về sản phẩm, đơn hàng hoặc chính sách bảo hành, vui lòng liên hệ với chúng tôi qua các kênh bên dưới.\n\nĐội ngũ tư vấn luôn sẵn sàng phản hồi nhanh chóng để giúp bạn chọn đúng sản phẩm và giải quyết vấn đề trong quá trình mua sắm.\n\nBạn cũng có thể để lại thông tin liên hệ để chúng tôi gọi lại và hỗ trợ chi tiết theo nhu cầu.',
+    ],
+  );
 }
 
 async function ensureCategoryGroupsTable() {
@@ -320,6 +333,42 @@ async function ensureReviewsTable() {
   await ensureColumn('reviews', 'image_url', 'text null');
   await ensureColumn('reviews', 'status', "varchar(20) not null default 'pending'");
   await ensureColumn('reviews', 'is_hidden', 'tinyint(1) not null default 0');
+}
+
+async function ensureSupportRequestsTable() {
+  const ensureColumn = async (tableName, columnName, definitionSql) => {
+    const rows = await runQuery(
+      `select count(*) as count_value
+       from information_schema.columns
+       where table_schema = database()
+         and table_name = ?
+         and column_name = ?`,
+      [tableName, columnName],
+    );
+    const countValue = Number(rows?.[0]?.count_value || 0);
+    if (countValue > 0) return;
+    await runQuery(`alter table ${tableName} add column ${columnName} ${definitionSql}`);
+  };
+
+  await runQuery(`
+    create table if not exists support_requests (
+      id varchar(64) not null primary key,
+      user_id varchar(64) null,
+      full_name varchar(255) not null,
+      email varchar(255) not null,
+      phone varchar(50) null,
+      subject varchar(255) not null,
+      message text not null,
+      status varchar(20) not null default 'open',
+      resolved_at datetime null,
+      created_at timestamp default current_timestamp,
+      updated_at timestamp default current_timestamp on update current_timestamp,
+      index idx_support_status (status),
+      index idx_support_created (created_at)
+    )
+  `);
+
+  await ensureColumn('support_requests', 'phone', 'varchar(50) null');
 }
 
 function normalizeDateTimeInput(value) {
@@ -398,16 +447,24 @@ async function ensurePromotionsTables() {
 }
 
 async function ensureOrdersInventoryColumn() {
-  const rows = await runQuery(
-    `select count(*) as count_value
-     from information_schema.columns
-     where table_schema = database()
-       and table_name = 'orders'
-       and column_name = 'stock_deducted'`,
-  );
-  const countValue = Number(rows?.[0]?.count_value || 0);
-  if (countValue > 0) return;
-  await runQuery("alter table orders add column stock_deducted tinyint(1) not null default 0");
+  const ensureColumn = async (columnName, definitionSql) => {
+    const rows = await runQuery(
+      `select count(*) as count_value
+       from information_schema.columns
+       where table_schema = database()
+         and table_name = 'orders'
+         and column_name = ?`,
+      [columnName],
+    );
+    const countValue = Number(rows?.[0]?.count_value || 0);
+    if (countValue > 0) return;
+    await runQuery(`alter table orders add column ${columnName} ${definitionSql}`);
+  };
+
+  await ensureColumn('stock_deducted', 'tinyint(1) not null default 0');
+  await ensureColumn('cancel_reason', 'varchar(80) null');
+  await ensureColumn('cancel_reason_detail', 'text null');
+  await ensureColumn('cancelled_at', 'datetime null');
 }
 
 async function recomputeProductReviewStats(productId) {
@@ -447,10 +504,22 @@ async function applyOrderInventoryDelta(orderId, direction) {
   const normalizedOrderId = String(orderId || '').trim();
   if (!normalizedOrderId) return;
   const multiplier = direction === 'restore' ? 1 : -1;
-  const orderItems = await runQuery(
-    'select product_id, quantity, shoe_size from order_items where order_id = ?',
-    [normalizedOrderId],
-  );
+  let orderItems = [];
+  try {
+    orderItems = await runQuery(
+      'select product_id, quantity, shoe_size, size_label from order_items where order_id = ?',
+      [normalizedOrderId],
+    );
+  } catch (error) {
+    const message = String(error?.message || '');
+    if (!message.includes("Unknown column 'size_label'")) {
+      throw error;
+    }
+    orderItems = await runQuery(
+      'select product_id, quantity, shoe_size from order_items where order_id = ?',
+      [normalizedOrderId],
+    );
+  }
   for (const item of orderItems) {
     const productId = String(item?.product_id || '').trim();
     const quantity = Math.max(0, Math.floor(Number(item?.quantity || 0)));
@@ -462,22 +531,27 @@ async function applyOrderInventoryDelta(orderId, direction) {
       await runQuery('update products set stock = stock + ? where id = ?', [quantity, productId]);
     }
 
+    const sizeLabel = String(item?.size_label || '').trim();
     const shoeSizeRaw = item?.shoe_size;
-    if (shoeSizeRaw == null || shoeSizeRaw === '') continue;
-    const shoeSizeNumber = Number(shoeSizeRaw);
-    if (!Number.isFinite(shoeSizeNumber)) continue;
-    const shoeSizeKey = String(Math.floor(shoeSizeNumber));
+    let sizeKey = sizeLabel;
+    if (!sizeKey && shoeSizeRaw != null && shoeSizeRaw !== '') {
+      const shoeSizeNumber = Number(shoeSizeRaw);
+      if (Number.isFinite(shoeSizeNumber)) {
+        sizeKey = String(Math.floor(shoeSizeNumber));
+      }
+    }
+    if (!sizeKey) continue;
 
     const productRows = await runQuery('select size_stock from products where id = ? limit 1', [productId]);
     const rawSizeStock = String(productRows?.[0]?.size_stock || '').trim();
     if (!rawSizeStock) continue;
 
     const sizeStockMap = parseSizeStockValue(rawSizeStock);
-    const currentSizeStock = Math.max(0, Math.floor(Number(sizeStockMap[shoeSizeKey] || 0)));
+    const currentSizeStock = Math.max(0, Math.floor(Number(sizeStockMap[sizeKey] || 0)));
     const nextSizeStock = multiplier < 0
       ? Math.max(0, currentSizeStock - quantity)
       : currentSizeStock + quantity;
-    sizeStockMap[shoeSizeKey] = nextSizeStock;
+    sizeStockMap[sizeKey] = nextSizeStock;
     await runQuery('update products set size_stock = ? where id = ?', [JSON.stringify(sizeStockMap), productId]);
   }
 }
@@ -1268,6 +1342,44 @@ app.post('/api/reviews/submit', requireSession, async (req, res) => {
   }
 });
 
+app.post('/api/support/submit', async (req, res) => {
+  try {
+    const fullName = String(req.body?.full_name || '').trim();
+    const email = String(req.body?.email || '').trim().toLowerCase();
+    const phone = String(req.body?.phone || '').trim();
+    const message = String(req.body?.message || '').trim();
+
+    if (!fullName) {
+      return res.status(400).json({ error: { message: 'FULL_NAME_REQUIRED' } });
+    }
+    if (!email || !email.includes('@')) {
+      return res.status(400).json({ error: { message: 'EMAIL_INVALID' } });
+    }
+    if (!message) {
+      return res.status(400).json({ error: { message: 'MESSAGE_REQUIRED' } });
+    }
+
+    const requestId = randomUUID();
+    await runQuery(
+      `insert into support_requests (id, user_id, full_name, email, phone, subject, message, status)
+       values (?, ?, ?, ?, ?, ?, ?, 'open')`,
+      [
+        requestId,
+        req.session?.user?.id || null,
+        fullName,
+        email,
+        phone || null,
+        'Liên hệ từ trang Liên hệ',
+        message,
+      ],
+    );
+
+    return res.json({ data: { id: requestId }, error: null });
+  } catch (error) {
+    return res.status(500).json({ error: { message: error.message } });
+  }
+});
+
 app.post('/api/reviews/moderate', requireSession, async (req, res) => {
   try {
     const actorId = String(req.session.user?.id || '').trim();
@@ -1894,14 +2006,16 @@ app.post('/api/db/rpc', requireSession, async (req, res) => {
       const productId = String(item.product_id || '').trim();
       const quantity = Number(item.quantity || 0);
       const price = Number(item.price || 0);
+      const sizeLabelRaw = String(item.size_label || '').trim();
+      const sizeLabel = sizeLabelRaw || null;
       const shoeSize = item.shoe_size == null ? null : Number(item.shoe_size);
       if (!productId || !Number.isFinite(quantity) || quantity <= 0 || !Number.isFinite(price) || price < 0) {
         throw new Error('INVALID_ORDER_ITEM');
       }
 
       await connection.execute(
-        'insert into order_items (id, order_id, product_id, quantity, price, shoe_size) values (?, ?, ?, ?, ?, ?)',
-        [randomUUID(), orderId, productId, Math.floor(quantity), price, shoeSize],
+        'insert into order_items (id, order_id, product_id, quantity, price, shoe_size, size_label) values (?, ?, ?, ?, ?, ?, ?)',
+        [randomUUID(), orderId, productId, Math.floor(quantity), price, shoeSize, sizeLabel],
       );
 
     }
@@ -1940,6 +2054,7 @@ Promise.all([
   ensureBannersTable(),
   ensurePromotionsTables(),
   ensureReviewsTable(),
+  ensureSupportRequestsTable(),
 ])
   .then(() => {
     app.listen(PORT, () => {

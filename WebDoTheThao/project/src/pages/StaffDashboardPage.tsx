@@ -46,12 +46,14 @@ type StaffTab =
   | 'cost_adjustment'
   | 'banners'
   | 'categories'
+  | 'section_titles'
   | 'customers'
   | 'employees'
   | 'support'
   | 'promotions'
   | 'reviews'
-  | 'about_content';
+  | 'about_content'
+  | 'contact_content';
 
 interface OrderWithCustomer extends Order {
   customer?: AccountProfile;
@@ -141,6 +143,19 @@ interface AccountProfile extends Profile {
   provider?: string | null;
 }
 
+function toDateTimeLocalInput(rawValue?: string | null) {
+  const value = String(rawValue || '').trim();
+  if (!value) return '';
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return '';
+  const year = parsed.getFullYear();
+  const month = String(parsed.getMonth() + 1).padStart(2, '0');
+  const day = String(parsed.getDate()).padStart(2, '0');
+  const hours = String(parsed.getHours()).padStart(2, '0');
+  const minutes = String(parsed.getMinutes()).padStart(2, '0');
+  return `${year}-${month}-${day}T${hours}:${minutes}`;
+}
+
 function buildAccountProfiles(profilesData: Profile[], usersData: UserAccountRow[]) {
   const profileMap = new Map<string, Profile>(profilesData.map(item => [item.id, item]));
   const mergedFromUsers = usersData.map((userItem) => {
@@ -205,6 +220,9 @@ const DEFAULT_CATEGORY_PRODUCT_GROUP_OPTIONS: Array<{ value: CategoryProductGrou
 
 const ORDER_STATUSES: Order['status'][] = ['pending', 'confirmed', 'shipping', 'delivered', 'cancelled'];
 const MAX_RENDER_ITEMS = 60;
+const STAFF_ORDERS_PER_PAGE = 30;
+const STAFF_LIST_ITEMS_PER_PAGE = 30;
+const ADMIN_PRODUCTS_PER_PAGE = 50;
 const MAX_PRODUCT_IMAGE_SIZE_BYTES = 300 * 1024;
 const NEW_PRODUCT_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
 const APPAREL_SIZES = ['S', 'M', 'L', 'XL', '2XL'];
@@ -214,6 +232,13 @@ const HIGHLIGHT_TAG_OPTIONS = ['Toàn Diện', 'Siêu Nhẹ', 'Ổn Định', '�
 const SHOE_FORM_OPTIONS = ['Slim - Bàn Chân Thon', 'Unisex - Bàn Chân Thường', 'Wide - Bàn Chân Bè'];
 const PLAY_STYLE_OPTIONS = ['Ngoài Trời - Sân Bê Tông', 'Trong Nhà - Sân Thảm', 'Trong Nhà & Ngoài Trời'];
 const SEGMENT_OPTIONS = ['Tầm Thấp', 'Trung Cấp', 'Cao Cấp'];
+const CANCEL_REASON_LABELS: Record<string, string> = {
+  change_mind: 'Tôi không còn nhu cầu mua nữa',
+  change_product: 'Tôi muốn thay đổi sản phẩm (kích thước/màu/số lượng)',
+  update_address: 'Tôi muốn cập nhật địa chỉ/SĐT nhận hàng',
+  delivery_delay: 'Thời gian giao hàng lâu',
+  other: 'Lý do khác',
+};
 const SHOPVNB_CATEGORY_SEEDS: Array<{
   name: string;
   slug: string;
@@ -670,6 +695,7 @@ const PRODUCT_TABS: StaffTab[] = [
   'cost_adjustment',
 ];
 const ACCOUNT_TABS: StaffTab[] = ['customers', 'employees'];
+const CATEGORY_TABS: StaffTab[] = ['categories', 'section_titles'];
 const ALL_STAFF_TABS: StaffTab[] = [
   'overview',
   'orders',
@@ -685,12 +711,14 @@ const ALL_STAFF_TABS: StaffTab[] = [
   'cost_adjustment',
   'banners',
   'categories',
+  'section_titles',
   'customers',
   'employees',
   'support',
   'promotions',
   'reviews',
   'about_content',
+  'contact_content',
 ];
 
 function isStaffTab(value: string | null): value is StaffTab {
@@ -818,6 +846,45 @@ function parseSizeStockMap(rawValue?: string | null) {
   }
 }
 
+function extractPhoneFromSupportMessage(message: string) {
+  const raw = String(message || '');
+  const matched = raw.match(/^SĐT:\s*([^\n]+)\n\n/i);
+  return matched ? String(matched[1] || '').trim() : '';
+}
+
+function distributeStockAcrossSizes(sizeValues: string[], totalStock: number) {
+  const normalizedSizes = Array.from(new Set(
+    sizeValues
+      .map(item => String(item || '').trim())
+      .filter(Boolean),
+  ));
+  if (normalizedSizes.length === 0) return {} as Record<string, number>;
+  const safeTotal = Math.max(0, Math.floor(Number(totalStock) || 0));
+  const baseStock = Math.floor(safeTotal / normalizedSizes.length);
+  let remainder = safeTotal % normalizedSizes.length;
+  const nextMap: Record<string, number> = {};
+  normalizedSizes.forEach(size => {
+    const bonus = remainder > 0 ? 1 : 0;
+    nextMap[size] = baseStock + bonus;
+    if (remainder > 0) remainder -= 1;
+  });
+  return nextMap;
+}
+
+function buildDistributedSizeStock(sizeValues: string[], totalStock: number) {
+  const nextMap = distributeStockAcrossSizes(sizeValues, totalStock);
+  if (Object.keys(nextMap).length === 0) return null;
+  return JSON.stringify(nextMap);
+}
+
+function resolveProductSizeStockMap(product: Product) {
+  const explicitMap = parseSizeStockMap(product.size_stock);
+  if (Object.keys(explicitMap).length > 0) return explicitMap;
+  const sizeValues = getProductSizeOptions(product);
+  if (sizeValues.length === 0) return explicitMap;
+  return distributeStockAcrossSizes(sizeValues, Number(product.stock || 0));
+}
+
 function parseImageGallery(rawValue?: string | null, mainImageUrl?: string | null) {
   const result: string[] = [];
   if (mainImageUrl) result.push(String(mainImageUrl));
@@ -912,6 +979,7 @@ export default function StaffDashboardPage() {
     return window.innerWidth >= 1024;
   });
   const [isProductMenuOpen, setIsProductMenuOpen] = useState(false);
+  const [isCategoryMenuOpen, setIsCategoryMenuOpen] = useState(false);
   const [isAccountMenuOpen, setIsAccountMenuOpen] = useState(false);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
@@ -944,6 +1012,7 @@ export default function StaffDashboardPage() {
   const [newAccountRole, setNewAccountRole] = useState<'customer' | 'staff'>('customer');
   const [createAccountMessage, setCreateAccountMessage] = useState('');
   const [createAccountError, setCreateAccountError] = useState('');
+  const [isCreateAccountPopupOpen, setIsCreateAccountPopupOpen] = useState(false);
   const [supportRequests, setSupportRequests] = useState<SupportRequest[]>([]);
   const [supportFeatureEnabled, setSupportFeatureEnabled] = useState(true);
   const [promotions, setPromotions] = useState<PromotionItem[]>([]);
@@ -957,6 +1026,16 @@ export default function StaffDashboardPage() {
   const [newPromotionStartsAt, setNewPromotionStartsAt] = useState('');
   const [newPromotionEndsAt, setNewPromotionEndsAt] = useState('');
   const [newPromotionIsActive, setNewPromotionIsActive] = useState(true);
+  const [isEditPromotionPopupOpen, setIsEditPromotionPopupOpen] = useState(false);
+  const [editingPromotionId, setEditingPromotionId] = useState('');
+  const [editPromotionCode, setEditPromotionCode] = useState('');
+  const [editPromotionName, setEditPromotionName] = useState('');
+  const [editPromotionDiscountPercent, setEditPromotionDiscountPercent] = useState('');
+  const [editPromotionMinOrder, setEditPromotionMinOrder] = useState('');
+  const [editPromotionMaxUses, setEditPromotionMaxUses] = useState('');
+  const [editPromotionStartsAt, setEditPromotionStartsAt] = useState('');
+  const [editPromotionEndsAt, setEditPromotionEndsAt] = useState('');
+  const [editPromotionIsActive, setEditPromotionIsActive] = useState(true);
   const [assignMode, setAssignMode] = useState<'all_buyers' | 'min_order' | 'specific_user'>('all_buyers');
   const [assignMinOrderAmount, setAssignMinOrderAmount] = useState('');
   const [assignTargetUserId, setAssignTargetUserId] = useState('');
@@ -972,8 +1051,17 @@ export default function StaffDashboardPage() {
   const [aboutContentMessage, setAboutContentMessage] = useState('');
   const [aboutContentError, setAboutContentError] = useState('');
   const [showAboutPreview, setShowAboutPreview] = useState(false);
+  const [contactFeatureEnabled, setContactFeatureEnabled] = useState(true);
+  const [contactContentId, setContactContentId] = useState('');
+  const [contactContentValue, setContactContentValue] = useState('');
+  const [contactContentMessage, setContactContentMessage] = useState('');
+  const [contactContentError, setContactContentError] = useState('');
+  const [showContactPreview, setShowContactPreview] = useState(false);
 
   const [orderStatusDrafts, setOrderStatusDrafts] = useState<Record<string, Order['status']>>({});
+  const [ordersPage, setOrdersPage] = useState(1);
+  const [ordersSearchKeyword, setOrdersSearchKeyword] = useState('');
+  const [selectedOrderDetailId, setSelectedOrderDetailId] = useState<string | null>(null);
   const [stockDrafts, setStockDrafts] = useState<Record<string, string>>({});
   const [inventorySizeDrafts, setInventorySizeDrafts] = useState<Record<string, string>>({});
   const [supportStatusDrafts, setSupportStatusDrafts] = useState<Record<string, SupportRequest['status']>>({});
@@ -1002,6 +1090,7 @@ export default function StaffDashboardPage() {
   const [editCategoryImageUrl, setEditCategoryImageUrl] = useState('');
   const [editCategoryImageName, setEditCategoryImageName] = useState('');
   const [isCreateGroupPopupOpen, setIsCreateGroupPopupOpen] = useState(false);
+  const [isCreateHomeSectionPopupOpen, setIsCreateHomeSectionPopupOpen] = useState(false);
   const [newCategoryGroupLabel, setNewCategoryGroupLabel] = useState('');
   const [creatingCategoryGroup, setCreatingCategoryGroup] = useState(false);
   const [newBannerTitle, setNewBannerTitle] = useState('');
@@ -1073,11 +1162,23 @@ export default function StaffDashboardPage() {
   const [editProductGalleryNames, setEditProductGalleryNames] = useState<string[]>([]);
   const [shopVnbImporting, setShopVnbImporting] = useState(false);
   const [currentTimeMs, setCurrentTimeMs] = useState(() => Date.now());
+  const [productsListSearchInput, setProductsListSearchInput] = useState('');
+  const [productsListSearchKeyword, setProductsListSearchKeyword] = useState('');
   const [inventorySearchKeyword, setInventorySearchKeyword] = useState('');
+  const [productsListPage, setProductsListPage] = useState(1);
+  const [inventoryPage, setInventoryPage] = useState(1);
+  const [newProductsPage, setNewProductsPage] = useState(1);
+  const [featuredProductsPage, setFeaturedProductsPage] = useState(1);
+  const [categoriesPage, setCategoriesPage] = useState(1);
+  const [customerAccountsPage, setCustomerAccountsPage] = useState(1);
+  const [employeeAccountsPage, setEmployeeAccountsPage] = useState(1);
+  const [accountsSearchKeyword, setAccountsSearchKeyword] = useState('');
+  const [supportPage, setSupportPage] = useState(1);
+  const [reviewsPage, setReviewsPage] = useState(1);
   const [inventoryPopupProductId, setInventoryPopupProductId] = useState<string | null>(null);
   const [inventoryPopupSelectedSize, setInventoryPopupSelectedSize] = useState('');
   const [inventoryPopupStockValue, setInventoryPopupStockValue] = useState('');
-  const STAFF_RESTRICTED_TABS: StaffTab[] = ['overview', 'employees', 'about_content'];
+  const STAFF_RESTRICTED_TABS: StaffTab[] = ['overview', 'employees', 'about_content', 'contact_content'];
   const shouldComputeOverview = activeTab === 'overview';
   const newProductBasePrice = Number(newProduct.price || 0);
   const newProductDiscountPercent = Number(newProduct.discount_percent || 0);
@@ -1135,6 +1236,7 @@ export default function StaffDashboardPage() {
 
   const handleTabChange = (nextTab: StaffTab) => {
     setActiveTab(nextTab);
+    setSelectedOrderDetailId(null);
     const nextParams = new URLSearchParams(searchParams);
     if (nextTab === 'overview') {
       nextParams.delete('tab');
@@ -1150,6 +1252,9 @@ export default function StaffDashboardPage() {
   useEffect(() => {
     if (PRODUCT_TABS.includes(activeTab)) {
       setIsProductMenuOpen(true);
+    }
+    if (CATEGORY_TABS.includes(activeTab)) {
+      setIsCategoryMenuOpen(true);
     }
     if (ACCOUNT_TABS.includes(activeTab)) {
       setIsAccountMenuOpen(true);
@@ -1208,12 +1313,13 @@ export default function StaffDashboardPage() {
         return;
       }
 
-      const [ordersRes, productsRes, categoriesRes, categoryGroupsRes, siteContentRes, sectionsRes, branchesRes, bannersRes, customersRes, usersRes, supportRes, promotionsRes, reviewsRes] = await Promise.all([
+      const [ordersRes, productsRes, categoriesRes, categoryGroupsRes, siteContentRes, contactContentRes, sectionsRes, branchesRes, bannersRes, customersRes, usersRes, supportRes, promotionsRes, reviewsRes] = await Promise.all([
         db.from('orders').select('*, order_items(*, products(*))').order('created_at', { ascending: false }),
         db.from('products').select('*, categories(*)').order('created_at', { ascending: false }),
         db.from('categories').select('*').order('created_at', { ascending: false }),
         db.from('category_groups').select('*').order('created_at', { ascending: true }),
         db.from('site_contents').select('*').eq('content_key', 'about_page').maybeSingle(),
+        db.from('site_contents').select('*').eq('content_key', 'contact_page').maybeSingle(),
         db.from('home_category_sections').select('*').order('sort_order', { ascending: true }),
         db.from('branches').select('*').order('name', { ascending: true }),
         db.from('banners').select('*').order('sort_order', { ascending: true }),
@@ -1267,6 +1373,16 @@ export default function StaffDashboardPage() {
         setAboutFeatureEnabled(true);
         setAboutContentId(String(aboutContent?.id || ''));
         setAboutContentValue(String(aboutContent?.content_value || ''));
+      }
+      if (contactContentRes.error) {
+        setContactFeatureEnabled(false);
+        setContactContentId('');
+        setContactContentValue('');
+      } else {
+        const contactContent = (contactContentRes.data || null) as SiteContentItem | null;
+        setContactFeatureEnabled(true);
+        setContactContentId(String(contactContent?.id || ''));
+        setContactContentValue(String(contactContent?.content_value || ''));
       }
       if (!sectionsRes.error) {
         const nextSections = ((sectionsRes.data || []) as HomeCategorySection[])
@@ -1528,10 +1644,27 @@ export default function StaffDashboardPage() {
     [reviews, shouldComputeOverview],
   );
 
-  const visibleProducts = useMemo(() => products.slice(0, MAX_RENDER_ITEMS), [products]);
-  const visibleInventoryProducts = useMemo(() => {
+  const filteredProductsList = useMemo(() => {
+    const keyword = normalizeSearchKeyword(productsListSearchKeyword);
+    if (!keyword) return products;
+    return products.filter(product => {
+      const searchSource = normalizeSearchKeyword(
+        `${product.name || ''} ${product.slug || ''} ${product.brand || ''}`,
+      );
+      return searchSource.includes(keyword);
+    });
+  }, [products, productsListSearchKeyword]);
+  const productsListTotalPages = useMemo(
+    () => Math.max(1, Math.ceil(filteredProductsList.length / ADMIN_PRODUCTS_PER_PAGE)),
+    [filteredProductsList.length],
+  );
+  const visibleProducts = useMemo(() => {
+    const startIndex = (productsListPage - 1) * ADMIN_PRODUCTS_PER_PAGE;
+    return filteredProductsList.slice(startIndex, startIndex + ADMIN_PRODUCTS_PER_PAGE);
+  }, [filteredProductsList, productsListPage]);
+  const filteredInventoryProducts = useMemo(() => {
     const keyword = normalizeSearchKeyword(inventorySearchKeyword);
-    const sourceProducts = keyword
+    return keyword
       ? products.filter(product => {
         const searchSource = normalizeSearchKeyword(
           `${product.name || ''} ${product.slug || ''} ${product.brand || ''} ${product.color_options || ''}`,
@@ -1539,8 +1672,15 @@ export default function StaffDashboardPage() {
         return searchSource.includes(keyword);
       })
       : products;
-    return sourceProducts.slice(0, MAX_RENDER_ITEMS);
   }, [products, inventorySearchKeyword]);
+  useEffect(() => {
+    if (productsListPage > productsListTotalPages) {
+      setProductsListPage(productsListTotalPages);
+    }
+  }, [productsListPage, productsListTotalPages]);
+  useEffect(() => {
+    setProductsListPage(1);
+  }, [productsListSearchKeyword]);
   const bannerProductOptions = useMemo(
     () => [...products].sort((a, b) => String(a.name || '').localeCompare(String(b.name || ''), 'vi')),
     [products],
@@ -1588,34 +1728,122 @@ export default function StaffDashboardPage() {
     const allowedIds = new Set(categoriesForEditSectionGroup.map(item => item.id));
     setEditHomeSectionCategoryIds(prev => prev.filter(id => allowedIds.has(id)));
   }, [categoriesForEditSectionGroup]);
-  const visibleNewProducts = useMemo(
+  const allNewProducts = useMemo(
     () => [...products]
       .filter(item => {
         const createdAtMs = new Date(item.created_at || '').getTime();
         if (!Number.isFinite(createdAtMs)) return false;
         return currentTimeMs - createdAtMs <= NEW_PRODUCT_WINDOW_MS;
       })
-      .sort((a, b) => new Date(b.created_at || '').getTime() - new Date(a.created_at || '').getTime())
-      .slice(0, MAX_RENDER_ITEMS),
+      .sort((a, b) => new Date(b.created_at || '').getTime() - new Date(a.created_at || '').getTime()),
     [products, currentTimeMs],
   );
-  const visibleFeaturedProducts = useMemo(
-    () => products.filter(item => item.featured).slice(0, MAX_RENDER_ITEMS),
+  const allFeaturedProducts = useMemo(
+    () => products.filter(item => item.featured),
     [products],
   );
-  const visibleOrders = useMemo(() => orders.slice(0, MAX_RENDER_ITEMS), [orders]);
-  const visibleCustomers = useMemo(() => customers.slice(0, MAX_RENDER_ITEMS), [customers]);
-  const visibleCustomerAccounts = useMemo(
-    () => visibleCustomers.filter(item => (item.role || 'customer') === 'customer'),
-    [visibleCustomers],
+  const normalizedOrdersKeyword = ordersSearchKeyword.trim().toLowerCase();
+  const filteredOrders = useMemo(() => {
+    if (!normalizedOrdersKeyword) return orders;
+    return orders.filter(order => {
+      const orderIdMatch = String(order.id || '').toLowerCase().includes(normalizedOrdersKeyword);
+      const customerName = String(order.customer?.full_name || order.customer?.phone || order.user_id || '').toLowerCase();
+      const customerMatch = customerName.includes(normalizedOrdersKeyword);
+      const productMatch = (order.order_items || []).some(item =>
+        String(item.products?.name || '').toLowerCase().includes(normalizedOrdersKeyword),
+      );
+      return orderIdMatch || customerMatch || productMatch;
+    });
+  }, [orders, normalizedOrdersKeyword]);
+  const ordersTotalPages = Math.max(1, Math.ceil(filteredOrders.length / STAFF_ORDERS_PER_PAGE));
+  const normalizedOrdersPage = Math.min(ordersPage, ordersTotalPages);
+  const visibleOrders = useMemo(
+    () => filteredOrders.slice(
+      (normalizedOrdersPage - 1) * STAFF_ORDERS_PER_PAGE,
+      normalizedOrdersPage * STAFF_ORDERS_PER_PAGE,
+    ),
+    [filteredOrders, normalizedOrdersPage],
   );
-  const visibleEmployeeAccounts = useMemo(
-    () => visibleCustomers.filter(item => (item.role || 'customer') === 'staff'),
-    [visibleCustomers],
+  const selectedOrderDetail = useMemo(
+    () => (selectedOrderDetailId ? orders.find(item => item.id === selectedOrderDetailId) || null : null),
+    [orders, selectedOrderDetailId],
   );
-  const visibleSupportRequests = useMemo(() => supportRequests.slice(0, MAX_RENDER_ITEMS), [supportRequests]);
+  const customerAccounts = useMemo(
+    () => customers.filter(item => (item.role || 'customer') === 'customer'),
+    [customers],
+  );
+  const employeeAccounts = useMemo(
+    () => customers.filter(item => (item.role || 'customer') === 'staff'),
+    [customers],
+  );
+  const normalizedAccountsKeyword = normalizeSearchKeyword(accountsSearchKeyword);
+  const filteredCustomerAccounts = useMemo(() => {
+    if (!normalizedAccountsKeyword) return customerAccounts;
+    return customerAccounts.filter(account => {
+      const searchSource = normalizeSearchKeyword(
+        `${account.full_name || ''} ${account.email || ''}`,
+      );
+      return searchSource.includes(normalizedAccountsKeyword);
+    });
+  }, [customerAccounts, normalizedAccountsKeyword]);
+  const filteredEmployeeAccounts = useMemo(() => {
+    if (!normalizedAccountsKeyword) return employeeAccounts;
+    return employeeAccounts.filter(account => {
+      const searchSource = normalizeSearchKeyword(
+        `${account.full_name || ''} ${account.email || ''}`,
+      );
+      return searchSource.includes(normalizedAccountsKeyword);
+    });
+  }, [employeeAccounts, normalizedAccountsKeyword]);
+  const inventoryTotalPages = Math.max(1, Math.ceil(filteredInventoryProducts.length / STAFF_LIST_ITEMS_PER_PAGE));
+  const normalizedInventoryPage = Math.min(inventoryPage, inventoryTotalPages);
+  const visibleInventoryProducts = useMemo(() => {
+    const startIndex = (normalizedInventoryPage - 1) * STAFF_LIST_ITEMS_PER_PAGE;
+    return filteredInventoryProducts.slice(startIndex, startIndex + STAFF_LIST_ITEMS_PER_PAGE);
+  }, [filteredInventoryProducts, normalizedInventoryPage]);
+  const newProductsTotalPages = Math.max(1, Math.ceil(allNewProducts.length / STAFF_LIST_ITEMS_PER_PAGE));
+  const normalizedNewProductsPage = Math.min(newProductsPage, newProductsTotalPages);
+  const visibleNewProducts = useMemo(() => {
+    const startIndex = (normalizedNewProductsPage - 1) * STAFF_LIST_ITEMS_PER_PAGE;
+    return allNewProducts.slice(startIndex, startIndex + STAFF_LIST_ITEMS_PER_PAGE);
+  }, [allNewProducts, normalizedNewProductsPage]);
+  const featuredProductsTotalPages = Math.max(1, Math.ceil(allFeaturedProducts.length / STAFF_LIST_ITEMS_PER_PAGE));
+  const normalizedFeaturedProductsPage = Math.min(featuredProductsPage, featuredProductsTotalPages);
+  const visibleFeaturedProducts = useMemo(() => {
+    const startIndex = (normalizedFeaturedProductsPage - 1) * STAFF_LIST_ITEMS_PER_PAGE;
+    return allFeaturedProducts.slice(startIndex, startIndex + STAFF_LIST_ITEMS_PER_PAGE);
+  }, [allFeaturedProducts, normalizedFeaturedProductsPage]);
+  const categoriesTotalPages = Math.max(1, Math.ceil(categories.length / STAFF_LIST_ITEMS_PER_PAGE));
+  const normalizedCategoriesPage = Math.min(categoriesPage, categoriesTotalPages);
+  const visibleCategories = useMemo(() => {
+    const startIndex = (normalizedCategoriesPage - 1) * STAFF_LIST_ITEMS_PER_PAGE;
+    return categories.slice(startIndex, startIndex + STAFF_LIST_ITEMS_PER_PAGE);
+  }, [categories, normalizedCategoriesPage]);
+  const customerAccountsTotalPages = Math.max(1, Math.ceil(filteredCustomerAccounts.length / STAFF_LIST_ITEMS_PER_PAGE));
+  const normalizedCustomerAccountsPage = Math.min(customerAccountsPage, customerAccountsTotalPages);
+  const visibleCustomerAccounts = useMemo(() => {
+    const startIndex = (normalizedCustomerAccountsPage - 1) * STAFF_LIST_ITEMS_PER_PAGE;
+    return filteredCustomerAccounts.slice(startIndex, startIndex + STAFF_LIST_ITEMS_PER_PAGE);
+  }, [filteredCustomerAccounts, normalizedCustomerAccountsPage]);
+  const employeeAccountsTotalPages = Math.max(1, Math.ceil(filteredEmployeeAccounts.length / STAFF_LIST_ITEMS_PER_PAGE));
+  const normalizedEmployeeAccountsPage = Math.min(employeeAccountsPage, employeeAccountsTotalPages);
+  const visibleEmployeeAccounts = useMemo(() => {
+    const startIndex = (normalizedEmployeeAccountsPage - 1) * STAFF_LIST_ITEMS_PER_PAGE;
+    return filteredEmployeeAccounts.slice(startIndex, startIndex + STAFF_LIST_ITEMS_PER_PAGE);
+  }, [filteredEmployeeAccounts, normalizedEmployeeAccountsPage]);
+  const supportTotalPages = Math.max(1, Math.ceil(supportRequests.length / STAFF_LIST_ITEMS_PER_PAGE));
+  const normalizedSupportPage = Math.min(supportPage, supportTotalPages);
+  const visibleSupportRequests = useMemo(() => {
+    const startIndex = (normalizedSupportPage - 1) * STAFF_LIST_ITEMS_PER_PAGE;
+    return supportRequests.slice(startIndex, startIndex + STAFF_LIST_ITEMS_PER_PAGE);
+  }, [supportRequests, normalizedSupportPage]);
   const visiblePromotions = useMemo(() => promotions.slice(0, MAX_RENDER_ITEMS), [promotions]);
-  const visibleReviews = useMemo(() => reviews.slice(0, MAX_RENDER_ITEMS), [reviews]);
+  const reviewsTotalPages = Math.max(1, Math.ceil(reviews.length / STAFF_LIST_ITEMS_PER_PAGE));
+  const normalizedReviewsPage = Math.min(reviewsPage, reviewsTotalPages);
+  const visibleReviews = useMemo(() => {
+    const startIndex = (normalizedReviewsPage - 1) * STAFF_LIST_ITEMS_PER_PAGE;
+    return reviews.slice(startIndex, startIndex + STAFF_LIST_ITEMS_PER_PAGE);
+  }, [reviews, normalizedReviewsPage]);
   const selectedPromotion = useMemo(
     () => promotions.find(item => item.id === selectedPromotionId) || null,
     [promotions, selectedPromotionId],
@@ -1631,6 +1859,59 @@ export default function StaffDashboardPage() {
       setSelectedPromotionId(promotions[0].id);
     }
   }, [promotions, selectedPromotionId]);
+
+  useEffect(() => {
+    if (ordersPage > ordersTotalPages) {
+      setOrdersPage(ordersTotalPages);
+    }
+  }, [ordersPage, ordersTotalPages]);
+  useEffect(() => {
+    if (inventoryPage > inventoryTotalPages) {
+      setInventoryPage(inventoryTotalPages);
+    }
+  }, [inventoryPage, inventoryTotalPages]);
+  useEffect(() => {
+    setInventoryPage(1);
+  }, [inventorySearchKeyword]);
+  useEffect(() => {
+    if (newProductsPage > newProductsTotalPages) {
+      setNewProductsPage(newProductsTotalPages);
+    }
+  }, [newProductsPage, newProductsTotalPages]);
+  useEffect(() => {
+    if (featuredProductsPage > featuredProductsTotalPages) {
+      setFeaturedProductsPage(featuredProductsTotalPages);
+    }
+  }, [featuredProductsPage, featuredProductsTotalPages]);
+  useEffect(() => {
+    if (categoriesPage > categoriesTotalPages) {
+      setCategoriesPage(categoriesTotalPages);
+    }
+  }, [categoriesPage, categoriesTotalPages]);
+  useEffect(() => {
+    if (customerAccountsPage > customerAccountsTotalPages) {
+      setCustomerAccountsPage(customerAccountsTotalPages);
+    }
+  }, [customerAccountsPage, customerAccountsTotalPages]);
+  useEffect(() => {
+    if (employeeAccountsPage > employeeAccountsTotalPages) {
+      setEmployeeAccountsPage(employeeAccountsTotalPages);
+    }
+  }, [employeeAccountsPage, employeeAccountsTotalPages]);
+  useEffect(() => {
+    setCustomerAccountsPage(1);
+    setEmployeeAccountsPage(1);
+  }, [accountsSearchKeyword]);
+  useEffect(() => {
+    if (supportPage > supportTotalPages) {
+      setSupportPage(supportTotalPages);
+    }
+  }, [supportPage, supportTotalPages]);
+  useEffect(() => {
+    if (reviewsPage > reviewsTotalPages) {
+      setReviewsPage(reviewsTotalPages);
+    }
+  }, [reviewsPage, reviewsTotalPages]);
 
   useEffect(() => {
     if (!selectedPromotionId || activeTab !== 'promotions') return;
@@ -1855,6 +2136,23 @@ export default function StaffDashboardPage() {
     setOrders(prev => prev.map(order => (order.id === orderId ? { ...order, status: nextStatus } : order)));
   };
 
+  const handleOpenOrderDetail = async (orderId: string) => {
+    setSelectedOrderDetailId(orderId);
+    const currentOrder = orders.find(item => item.id === orderId);
+    if (!currentOrder) return;
+    const { data: latestOrder, error: latestOrderError } = await db
+      .from('orders')
+      .select('*, order_items(*, products(*))')
+      .eq('id', orderId)
+      .maybeSingle();
+    if (latestOrderError || !latestOrder) return;
+    const mergedOrder = {
+      ...latestOrder,
+      customer: currentOrder.customer,
+    } as OrderWithCustomer;
+    setOrders(prev => prev.map(item => (item.id === orderId ? mergedOrder : item)));
+  };
+
   const handleUpdateStock = async (productId: string, sizeKey?: string | null, overrideStockValue?: string) => {
     const draftKey = sizeKey ? `${productId}::${sizeKey}` : productId;
     const stockValue = Number((overrideStockValue ?? stockDrafts[draftKey]) || 0);
@@ -1868,7 +2166,7 @@ export default function StaffDashboardPage() {
     let nextStock = Math.floor(stockValue);
     let nextSizeStockRaw: string | null = product.size_stock || null;
     if (sizeKey) {
-      const sizeStockMap = parseSizeStockMap(product.size_stock);
+      const sizeStockMap = resolveProductSizeStockMap(product);
       if (Object.keys(sizeStockMap).length === 0) {
         const allSizeOptions = getProductSizeOptions(product);
         allSizeOptions.forEach(option => {
@@ -1901,7 +2199,7 @@ export default function StaffDashboardPage() {
   const openInventoryPopup = (product: Product) => {
     const sizeOptions = getProductSizeOptions(product);
     const defaultSize = inventorySizeDrafts[product.id] || sizeOptions[0] || '';
-    const sizeStockMap = parseSizeStockMap(product.size_stock);
+    const sizeStockMap = resolveProductSizeStockMap(product);
     const draftKey = defaultSize ? `${product.id}::${defaultSize}` : product.id;
     const currentValue = stockDrafts[draftKey]
       ?? (defaultSize ? String(sizeStockMap[defaultSize] ?? 0) : String(product.stock ?? 0));
@@ -1920,7 +2218,7 @@ export default function StaffDashboardPage() {
     if (!inventoryPopupProductId) return;
     const targetProduct = products.find(item => item.id === inventoryPopupProductId);
     if (!targetProduct) return;
-    const sizeStockMap = parseSizeStockMap(targetProduct.size_stock);
+    const sizeStockMap = resolveProductSizeStockMap(targetProduct);
     const draftKey = nextSize ? `${targetProduct.id}::${nextSize}` : targetProduct.id;
     const nextValue = stockDrafts[draftKey]
       ?? (nextSize ? String(sizeStockMap[nextSize] ?? 0) : String(targetProduct.stock ?? 0));
@@ -2113,6 +2411,63 @@ export default function StaffDashboardPage() {
     setAboutContentMessage('Đã tạo nội dung giới thiệu.');
   };
 
+  const handleSaveContactContent = async () => {
+    if (!isAdmin) {
+      setContactContentError('Chỉ admin mới có quyền chỉnh sửa liên hệ.');
+      return;
+    }
+    const nextContent = String(contactContentValue || '').trim();
+    if (!nextContent) {
+      setContactContentError('Nội dung liên hệ không được để trống.');
+      return;
+    }
+
+    setContactContentError('');
+    setContactContentMessage('');
+    setSubmitting(true);
+
+    if (contactContentId) {
+      const { data, error: updateError } = await db
+        .from('site_contents')
+        .update({
+          content_value: nextContent,
+          content_title: 'Liên hệ',
+          updated_by: user?.id || null,
+        })
+        .eq('id', contactContentId)
+        .select('*')
+        .maybeSingle();
+      setSubmitting(false);
+      if (updateError || !data) {
+        setContactContentError(updateError?.message || 'Không thể lưu nội dung liên hệ.');
+        return;
+      }
+      setContactContentValue(String((data as SiteContentItem).content_value || ''));
+      setContactContentMessage('Đã lưu nội dung liên hệ.');
+      return;
+    }
+
+    const { data, error: createError } = await db
+      .from('site_contents')
+      .insert({
+        content_key: 'contact_page',
+        content_title: 'Liên hệ',
+        content_value: nextContent,
+        updated_by: user?.id || null,
+      })
+      .select('*')
+      .maybeSingle();
+    setSubmitting(false);
+    if (createError || !data) {
+      setContactContentError(createError?.message || 'Không thể tạo nội dung liên hệ.');
+      return;
+    }
+    const created = data as SiteContentItem;
+    setContactContentId(String(created.id || ''));
+    setContactContentValue(String(created.content_value || ''));
+    setContactContentMessage('Đã tạo nội dung liên hệ.');
+  };
+
   const startEditCategory = (cat: Category) => {
     setEditingCategoryId(cat.id);
     setEditCategoryName(cat.name);
@@ -2249,6 +2604,7 @@ export default function StaffDashboardPage() {
     ].sort((a, b) => Number(a.sort_order || 0) - Number(b.sort_order || 0)));
     setNewHomeSectionTitle('');
     setNewHomeSectionCategoryIds([]);
+    setIsCreateHomeSectionPopupOpen(false);
   };
 
   const handleDeleteHomeCategorySection = async (sectionId: string) => {
@@ -2587,6 +2943,7 @@ export default function StaffDashboardPage() {
     const discountPercent = Number(newProduct.discount_percent || 0);
     const price = computeDiscountedPrice(basePrice, discountPercent);
     const stock = Math.floor(Number(newProduct.stock || 0));
+    const distributedSizeStock = buildDistributedSizeStock(normalizedSizeOptions, stock);
     const originalPrice = discountPercent > 0 ? basePrice : null;
 
     if (!name || !slug || !categoryId) {
@@ -2632,6 +2989,7 @@ export default function StaffDashboardPage() {
         size_type: categorySizeType,
         color_options: colorOptions || null,
         size_options: sizeOptions || null,
+        size_stock: distributedSizeStock,
         branch_name: branchName || null,
         target_audience: targetAudience || null,
         highlight_tags: highlightTags || null,
@@ -2933,6 +3291,11 @@ export default function StaffDashboardPage() {
     handleTabChange('products_list');
   };
 
+  const handleProductsListSearchSubmit = (event: React.FormEvent) => {
+    event.preventDefault();
+    setProductsListSearchKeyword(productsListSearchInput.trim());
+  };
+
   const cancelEditProduct = () => {
     setEditingProductId(null);
     setEditProduct({
@@ -3001,6 +3364,7 @@ export default function StaffDashboardPage() {
     const segment = sizeType === 'shoes' ? normalizeCommaValues(editProduct.segment).join(', ') : '';
     const normalizedSizeOptions = normalizeSizesByType(normalizeCommaValues(editProduct.size_options), sizeType);
     const sizeOptions = normalizedSizeOptions.join(', ');
+    const distributedSizeStock = buildDistributedSizeStock(normalizedSizeOptions, stock);
     const mergedGallery = Array.from(new Set([imageUrl, ...editProductGalleryUrls]));
 
     if (!name || !slug || !categoryId) {
@@ -3045,6 +3409,7 @@ export default function StaffDashboardPage() {
         size_type: sizeType,
         color_options: colorOptions || null,
         size_options: sizeOptions || null,
+        size_stock: distributedSizeStock,
         branch_name: branchName || null,
         target_audience: targetAudience || null,
         highlight_tags: highlightTags || null,
@@ -3219,6 +3584,92 @@ export default function StaffDashboardPage() {
     setPromotionMessage('Tạo mã khuyến mãi thành công.');
   };
 
+  const handleOpenEditPromotion = (promotion: PromotionItem) => {
+    setEditingPromotionId(promotion.id);
+    setEditPromotionCode(String(promotion.code || '').trim().toUpperCase());
+    setEditPromotionName(String(promotion.name || '').trim());
+    setEditPromotionDiscountPercent(String(Math.floor(Number(promotion.discount_percent || 0))));
+    setEditPromotionMinOrder(String(Number(promotion.min_order || 0)));
+    setEditPromotionMaxUses(String(Math.max(1, Math.floor(Number(promotion.max_uses_per_user || 1)))));
+    setEditPromotionStartsAt(toDateTimeLocalInput(promotion.starts_at || null));
+    setEditPromotionEndsAt(toDateTimeLocalInput(promotion.ends_at || null));
+    setEditPromotionIsActive(Boolean(promotion.is_active ?? (promotion.status === 'active')));
+    setPromotionError('');
+    setPromotionMessage('');
+    setIsEditPromotionPopupOpen(true);
+  };
+
+  const handleUpdatePromotion = async () => {
+    if (!editingPromotionId) return;
+    const code = editPromotionCode.trim().toUpperCase();
+    const name = editPromotionName.trim();
+    const discountPercent = Math.floor(Number(editPromotionDiscountPercent || 0));
+    const minOrder = Number(editPromotionMinOrder || 0);
+    const maxUses = Math.floor(Number(editPromotionMaxUses || 1));
+    if (!code) {
+      setPromotionError('Vui lòng nhập mã khuyến mãi.');
+      return;
+    }
+    if (!Number.isFinite(discountPercent) || discountPercent <= 0 || discountPercent > 99) {
+      setPromotionError('Phần trăm giảm phải từ 1 đến 99.');
+      return;
+    }
+    if (!Number.isFinite(minOrder) || minOrder < 0) {
+      setPromotionError('Giá trị đơn tối thiểu không hợp lệ.');
+      return;
+    }
+    if (!Number.isFinite(maxUses) || maxUses < 1) {
+      setPromotionError('Số lần dùng tối đa mỗi user phải >= 1.');
+      return;
+    }
+
+    const payload = {
+      code,
+      name,
+      discount_percent: discountPercent,
+      min_order: minOrder,
+      max_uses_per_user: maxUses,
+      starts_at: editPromotionStartsAt || null,
+      ends_at: editPromotionEndsAt || null,
+      is_active: editPromotionIsActive,
+      status: editPromotionIsActive ? 'active' : 'inactive',
+    };
+
+    setSubmitting(true);
+    const { error: updateError } = await db.from('promotions').update(payload).eq('id', editingPromotionId);
+    setSubmitting(false);
+    if (updateError) {
+      setPromotionError(updateError.message || 'Không thể cập nhật mã khuyến mãi.');
+      return;
+    }
+
+    setPromotions(prev => prev.map(item => (
+      item.id === editingPromotionId
+        ? { ...item, ...payload }
+        : item
+    )));
+    setIsEditPromotionPopupOpen(false);
+    setEditingPromotionId('');
+    setPromotionMessage('Đã cập nhật mã khuyến mãi.');
+  };
+
+  const handleDeletePromotion = async (promotionId: string) => {
+    if (!window.confirm('Bạn có chắc muốn xóa mã khuyến mãi này?')) return;
+    setSubmitting(true);
+    const { error: deleteError } = await db.from('promotions').delete().eq('id', promotionId);
+    setSubmitting(false);
+    if (deleteError) {
+      setPromotionError(deleteError.message || 'Không thể xóa mã khuyến mãi.');
+      return;
+    }
+    setPromotions(prev => prev.filter(item => item.id !== promotionId));
+    if (selectedPromotionId === promotionId) {
+      setSelectedPromotionId('');
+      setPromotionAssignments([]);
+    }
+    setPromotionMessage('Đã xóa mã khuyến mãi.');
+  };
+
   const handleAssignPromotion = async () => {
     if (!isAdmin) {
       window.alert('Chỉ admin mới có quyền phát mã.');
@@ -3332,6 +3783,7 @@ export default function StaffDashboardPage() {
     { id: 'banners', label: 'Banner', icon: ImagePlus },
     { id: 'categories', label: 'Danh mục', icon: Tags },
     { id: 'about_content', label: 'Giới thiệu', icon: FileText },
+    { id: 'contact_content', label: 'Liên hệ', icon: FileText },
     { id: 'promotions', label: 'Khuyến mãi', icon: TicketPercent },
     { id: 'reviews', label: 'Đánh giá', icon: Star },
     { id: 'support', label: 'Hỗ trợ', icon: Headset },
@@ -3345,6 +3797,10 @@ export default function StaffDashboardPage() {
     { id: 'inventory', label: 'Quản lý tồn kho' },
     { id: 'new_products', label: 'Sản phẩm mới' },
     { id: 'featured_products', label: 'Sản phẩm nổi bật' },
+  ];
+  const categoryMenuItems: Array<{ id: StaffTab; label: string }> = [
+    { id: 'categories', label: 'Thêm danh mục' },
+    { id: 'section_titles', label: 'Thêm section tiêu đề' },
   ];
   const baseAccountMenuItems: Array<{ id: StaffTab; label: string }> = [
     { id: 'customers', label: 'Khách hàng' },
@@ -3368,13 +3824,15 @@ export default function StaffDashboardPage() {
     suppliers: 'Nhà cung cấp',
     cost_adjustment: 'Điều chỉnh giá vốn',
     banners: 'Banner',
-    categories: 'Danh mục',
+    categories: 'Thêm danh mục',
+    section_titles: 'Thêm section tiêu đề',
     customers: 'Tài khoản khách hàng',
     employees: 'Tài khoản nhân viên',
     support: 'Hỗ trợ',
     promotions: 'Khuyến mãi',
     reviews: 'Đánh giá',
     about_content: 'Giới thiệu',
+    contact_content: 'Liên hệ',
   };
 
   return (
@@ -3466,6 +3924,46 @@ export default function StaffDashboardPage() {
             <button
               onClick={() => {
                 if (!isSidebarOpen) {
+                  handleTabChange('categories');
+                  return;
+                }
+                setIsCategoryMenuOpen(prev => !prev);
+              }}
+              title="Danh mục"
+              className={`w-full flex items-center ${isSidebarOpen ? 'justify-between px-3' : 'justify-center px-0'} py-2.5 rounded-lg text-sm transition-colors ${
+                CATEGORY_TABS.includes(activeTab)
+                  ? 'bg-blue-600 text-white'
+                  : 'text-zinc-100 hover:bg-zinc-800'
+              }`}
+            >
+              <span className={`inline-flex items-center ${isSidebarOpen ? 'gap-3' : ''}`}>
+                <Tags className="w-4 h-4" />
+                {isSidebarOpen && 'Danh mục'}
+              </span>
+              {isSidebarOpen && <ChevronDown className={`w-4 h-4 transition-transform ${isCategoryMenuOpen ? 'rotate-180' : ''}`} />}
+            </button>
+
+            {isSidebarOpen && isCategoryMenuOpen && (
+              <div className="ml-4 space-y-1 border-l border-zinc-700 pl-3">
+                {categoryMenuItems.map(item => (
+                  <button
+                    key={item.id}
+                    onClick={() => handleTabChange(item.id)}
+                    className={`w-full text-left px-3 py-2 rounded-md text-sm transition-colors ${
+                      activeTab === item.id
+                        ? 'bg-zinc-800 text-white'
+                        : 'text-zinc-300 hover:bg-zinc-900 hover:text-white'
+                    }`}
+                  >
+                    {item.label}
+                  </button>
+                ))}
+              </div>
+            )}
+
+            <button
+              onClick={() => {
+                if (!isSidebarOpen) {
                   handleTabChange('customers');
                   return;
                 }
@@ -3507,7 +4005,7 @@ export default function StaffDashboardPage() {
               </div>
             )}
 
-            {menuItems.filter(item => item.id !== 'overview').map(item => (
+            {menuItems.filter(item => !['overview', 'categories', 'section_titles'].includes(item.id)).map(item => (
               <button
                 key={item.id}
                 onClick={() => handleTabChange(item.id)}
@@ -3757,9 +4255,27 @@ export default function StaffDashboardPage() {
 
           {activeTab === 'orders' && (
             <div className="bg-white border border-slate-200 rounded-2xl p-5 space-y-4">
-              <h2 className="text-lg font-bold text-slate-900">Xem và xử lý đơn hàng</h2>
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <h2 className="text-lg font-bold text-slate-900">Xem và xử lý đơn hàng</h2>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="text"
+                    value={ordersSearchKeyword}
+                    onChange={event => {
+                      setOrdersSearchKeyword(event.target.value);
+                      setOrdersPage(1);
+                    }}
+                    placeholder="Tìm mã đơn / Tên KH / Tên sản Phẩm"
+                    className="h-9 w-full sm:w-80 px-3 border border-slate-200 rounded-lg text-sm bg-white"
+                  />
+                </div>
+              </div>
               {visibleOrders.map(order => (
-                <div key={order.id} className="border border-slate-100 rounded-xl p-4">
+                <div
+                  key={order.id}
+                  onClick={() => handleOpenOrderDetail(order.id)}
+                  className="border border-slate-100 rounded-xl p-4 cursor-pointer hover:border-blue-300 hover:bg-blue-50/20 transition-colors"
+                >
                   <div className="flex flex-wrap items-center justify-between gap-3 mb-3">
                     <div>
                       <p className="text-sm text-slate-500">Mã đơn: <span className="font-medium text-slate-800">{order.id.slice(0, 8)}...</span></p>
@@ -3773,9 +4289,10 @@ export default function StaffDashboardPage() {
                       <span className={`inline-flex px-2.5 py-1 rounded-full text-xs font-semibold ${getStatusColor(order.status)}`}>
                         {getStatusLabel(order.status)}
                       </span>
+                      <p className="text-xs text-blue-600 font-medium mt-1">Bấm để xem chi tiết</p>
                     </div>
                   </div>
-                  <div className="flex flex-wrap items-center gap-2">
+                  <div className="flex flex-wrap items-center gap-2" onClick={event => event.stopPropagation()}>
                     <button
                       onClick={() => handleConfirmOrder(order.id)}
                       disabled={order.status !== 'pending' || submitting}
@@ -3806,7 +4323,112 @@ export default function StaffDashboardPage() {
                   </div>
                 </div>
               ))}
-              {orders.length === 0 && <p className="text-sm text-slate-500">Chưa có đơn hàng nào.</p>}
+              <div className="flex items-center justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => setOrdersPage(prev => Math.max(1, prev - 1))}
+                  disabled={normalizedOrdersPage <= 1}
+                  className="h-9 px-3 rounded-lg text-sm font-medium text-slate-700 bg-slate-100 hover:bg-slate-200 disabled:opacity-50"
+                >
+                  Trước
+                </button>
+                <span className="text-sm text-slate-600">
+                  Trang {normalizedOrdersPage}/{ordersTotalPages}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setOrdersPage(prev => Math.min(ordersTotalPages, prev + 1))}
+                  disabled={normalizedOrdersPage >= ordersTotalPages}
+                  className="h-9 px-3 rounded-lg text-sm font-medium text-slate-700 bg-slate-100 hover:bg-slate-200 disabled:opacity-50"
+                >
+                  Sau
+                </button>
+              </div>
+              {filteredOrders.length === 0 && (
+                <p className="text-sm text-slate-500">
+                  {orders.length === 0 ? 'Chưa có đơn hàng nào.' : 'Không tìm thấy đơn hàng phù hợp từ khóa.'}
+                </p>
+              )}
+            </div>
+          )}
+
+          {selectedOrderDetail && (
+            <div className="fixed inset-0 z-[70] bg-slate-900/35 backdrop-blur-[1px] flex items-center justify-center p-4">
+              <div className="relative w-full max-w-xl rounded-2xl bg-white shadow-2xl border border-slate-200 p-5 space-y-4">
+                <button
+                  type="button"
+                  onClick={() => setSelectedOrderDetailId(null)}
+                  className="absolute top-3 right-3 p-2 rounded-lg text-slate-500 hover:text-slate-700 hover:bg-slate-100"
+                  aria-label="Đóng chi tiết đơn hàng"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+                <div>
+                  <h3 className="text-lg font-bold text-slate-900">Chi tiết đơn hàng</h3>
+                  <p className="text-sm text-slate-500">Thông tin tóm tắt và lý do hủy của đơn.</p>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div className="p-3 rounded-lg bg-slate-50 border border-slate-100">
+                    <p className="text-xs text-slate-500">Mã đơn</p>
+                    <p className="text-sm font-semibold text-slate-900 break-all">{selectedOrderDetail.id}</p>
+                  </div>
+                  <div className="p-3 rounded-lg bg-slate-50 border border-slate-100">
+                    <p className="text-xs text-slate-500">Khách hàng</p>
+                    <p className="text-sm font-semibold text-slate-900">
+                      {selectedOrderDetail.customer?.full_name || selectedOrderDetail.customer?.phone || selectedOrderDetail.user_id}
+                    </p>
+                  </div>
+                  <div className="p-3 rounded-lg bg-slate-50 border border-slate-100">
+                    <p className="text-xs text-slate-500">Ngày đặt</p>
+                    <p className="text-sm font-semibold text-slate-900">{formatDate(selectedOrderDetail.created_at)}</p>
+                  </div>
+                  <div className="p-3 rounded-lg bg-slate-50 border border-slate-100">
+                    <p className="text-xs text-slate-500">Trạng thái</p>
+                    <span className={`inline-flex px-2.5 py-1 rounded-full text-xs font-semibold ${getStatusColor(selectedOrderDetail.status)}`}>
+                      {getStatusLabel(selectedOrderDetail.status)}
+                    </span>
+                  </div>
+                </div>
+                <div className="p-3 rounded-lg border border-slate-100 bg-slate-50">
+                  <p className="text-xs text-slate-500 mb-1">Lý do hủy</p>
+                  <p className="text-sm text-slate-900">
+                    {selectedOrderDetail.cancel_reason
+                      ? (CANCEL_REASON_LABELS[selectedOrderDetail.cancel_reason] || selectedOrderDetail.cancel_reason)
+                      : 'Chưa có lý do hủy.'}
+                  </p>
+                  {selectedOrderDetail.cancel_reason_detail && (
+                    <p className="text-sm text-slate-600 mt-1">
+                      Chi tiết: {selectedOrderDetail.cancel_reason_detail}
+                    </p>
+                  )}
+                </div>
+                <div className="p-3 rounded-lg border border-slate-100">
+                  <p className="text-xs text-slate-500 mb-2">Sản phẩm trong đơn</p>
+                  <div className="space-y-2 max-h-48 overflow-y-auto pr-1">
+                    {(selectedOrderDetail.order_items || []).map(item => (
+                      <div key={item.id} className="text-sm text-slate-700 flex items-center justify-between gap-2">
+                        <span className="truncate">
+                          {item.products?.name || `Sản phẩm #${item.product_id.slice(0, 8)}`} x{item.quantity}
+                          {(item.size_label || item.shoe_size) ? ` - Size ${item.size_label || item.shoe_size}` : ''}
+                        </span>
+                        <span className="font-medium text-slate-900">{formatPrice((Number(item.price || 0) * Number(item.quantity || 0)))}</span>
+                      </div>
+                    ))}
+                    {(selectedOrderDetail.order_items || []).length === 0 && (
+                      <p className="text-sm text-slate-500">Không có dữ liệu sản phẩm cho đơn này.</p>
+                    )}
+                  </div>
+                </div>
+                <div className="flex justify-end">
+                  <button
+                    type="button"
+                    onClick={() => setSelectedOrderDetailId(null)}
+                    className="px-4 py-2 rounded-lg text-sm font-medium text-slate-700 bg-slate-100 hover:bg-slate-200"
+                  >
+                    Đóng
+                  </button>
+                </div>
+              </div>
             </div>
           )}
 
@@ -3814,16 +4436,21 @@ export default function StaffDashboardPage() {
             <div className="bg-white border border-slate-200 rounded-2xl p-5 space-y-4">
               {activeTab === 'products_list' && (
                 <>
-                  <div className="flex items-center justify-end gap-3">
+                  <form onSubmit={handleProductsListSearchSubmit} className="flex items-center justify-end gap-2">
+                    <input
+                      type="text"
+                      value={productsListSearchInput}
+                      onChange={event => setProductsListSearchInput(event.target.value)}
+                      placeholder="Tìm sản phẩm"
+                      className="h-9 w-full max-w-xs px-3 border border-slate-200 rounded-lg text-sm bg-white"
+                    />
                     <button
-                      type="button"
-                      onClick={handleImportShopVnbCatalog}
-                      disabled={submitting || shopVnbImporting}
-                      className="h-10 px-4 rounded-lg text-sm font-semibold text-white bg-teal-600 hover:bg-teal-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                      type="submit"
+                      className="h-9 px-3.5 rounded-lg text-sm font-semibold text-white bg-blue-600 hover:bg-blue-700"
                     >
-                      {shopVnbImporting ? 'Đang nhập dữ liệu...' : 'Nhập nhanh ShopVNB'}
+                      Tìm kiếm
                     </button>
-                  </div>
+                  </form>
                   <form onSubmit={handleCreateProduct} className="border border-slate-200 rounded-xl p-4 bg-slate-50/60 space-y-4">
                     <div className="flex items-center justify-between gap-3">
                       <h3 className="font-semibold text-slate-900">Thêm sản phẩm mới</h3>
@@ -4454,6 +5081,32 @@ export default function StaffDashboardPage() {
                         )}
                       </div>
                     ))}
+                    {visibleProducts.length === 0 && (
+                      <p className="text-sm text-slate-500">Không tìm thấy sản phẩm phù hợp.</p>
+                    )}
+                    {productsListTotalPages > 1 && (
+                      <div className="pt-1 flex items-center justify-end gap-2">
+                        <button
+                          type="button"
+                          onClick={() => setProductsListPage(prev => Math.max(1, prev - 1))}
+                          disabled={productsListPage === 1}
+                          className="h-9 px-3 rounded-lg border border-slate-200 bg-white text-sm text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+                        >
+                          Trước
+                        </button>
+                        <span className="text-sm text-slate-600">
+                          Trang {productsListPage}/{productsListTotalPages}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => setProductsListPage(prev => Math.min(productsListTotalPages, prev + 1))}
+                          disabled={productsListPage === productsListTotalPages}
+                          className="h-9 px-3 rounded-lg border border-slate-200 bg-white text-sm text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+                        >
+                          Sau
+                        </button>
+                      </div>
+                    )}
                   </div>
                 </>
               )}
@@ -4511,11 +5164,30 @@ export default function StaffDashboardPage() {
                       </div>
                     )}
                   </div>
+                  <div className="flex items-center justify-end gap-3">
+                    <button
+                      type="button"
+                      onClick={() => setInventoryPage(prev => Math.max(1, prev - 1))}
+                      disabled={normalizedInventoryPage <= 1}
+                      className="h-10 px-4 rounded-xl border border-slate-200 text-slate-700 disabled:opacity-50"
+                    >
+                      Trước
+                    </button>
+                    <span className="text-slate-700">Trang {normalizedInventoryPage}/{inventoryTotalPages}</span>
+                    <button
+                      type="button"
+                      onClick={() => setInventoryPage(prev => Math.min(inventoryTotalPages, prev + 1))}
+                      disabled={normalizedInventoryPage >= inventoryTotalPages}
+                      className="h-10 px-4 rounded-xl border border-slate-200 text-slate-700 disabled:opacity-50"
+                    >
+                      Sau
+                    </button>
+                  </div>
                   {inventoryPopupProductId && (() => {
                     const targetProduct = products.find(item => item.id === inventoryPopupProductId);
                     if (!targetProduct) return null;
                     const sizeOptions = getProductSizeOptions(targetProduct);
-                    const sizeStockMap = parseSizeStockMap(targetProduct.size_stock);
+                    const sizeStockMap = resolveProductSizeStockMap(targetProduct);
                     const currentStockValue = inventoryPopupSelectedSize
                       ? Number(sizeStockMap[inventoryPopupSelectedSize] ?? 0)
                       : Number(targetProduct.stock ?? 0);
@@ -4628,6 +5300,25 @@ export default function StaffDashboardPage() {
                     ))}
                     {visibleNewProducts.length === 0 && <p className="text-sm text-slate-500">Chưa có sản phẩm nào.</p>}
                   </div>
+                  <div className="flex items-center justify-end gap-3">
+                    <button
+                      type="button"
+                      onClick={() => setNewProductsPage(prev => Math.max(1, prev - 1))}
+                      disabled={normalizedNewProductsPage <= 1}
+                      className="h-10 px-4 rounded-xl border border-slate-200 text-slate-700 disabled:opacity-50"
+                    >
+                      Trước
+                    </button>
+                    <span className="text-slate-700">Trang {normalizedNewProductsPage}/{newProductsTotalPages}</span>
+                    <button
+                      type="button"
+                      onClick={() => setNewProductsPage(prev => Math.min(newProductsTotalPages, prev + 1))}
+                      disabled={normalizedNewProductsPage >= newProductsTotalPages}
+                      className="h-10 px-4 rounded-xl border border-slate-200 text-slate-700 disabled:opacity-50"
+                    >
+                      Sau
+                    </button>
+                  </div>
                 </>
               )}
 
@@ -4658,6 +5349,25 @@ export default function StaffDashboardPage() {
                     {visibleFeaturedProducts.length === 0 && (
                       <p className="text-sm text-slate-500">Chưa có sản phẩm nổi bật nào.</p>
                     )}
+                  </div>
+                  <div className="flex items-center justify-end gap-3">
+                    <button
+                      type="button"
+                      onClick={() => setFeaturedProductsPage(prev => Math.max(1, prev - 1))}
+                      disabled={normalizedFeaturedProductsPage <= 1}
+                      className="h-10 px-4 rounded-xl border border-slate-200 text-slate-700 disabled:opacity-50"
+                    >
+                      Trước
+                    </button>
+                    <span className="text-slate-700">Trang {normalizedFeaturedProductsPage}/{featuredProductsTotalPages}</span>
+                    <button
+                      type="button"
+                      onClick={() => setFeaturedProductsPage(prev => Math.min(featuredProductsTotalPages, prev + 1))}
+                      disabled={normalizedFeaturedProductsPage >= featuredProductsTotalPages}
+                      className="h-10 px-4 rounded-xl border border-slate-200 text-slate-700 disabled:opacity-50"
+                    >
+                      Sau
+                    </button>
                   </div>
                 </>
               )}
@@ -5061,274 +5771,221 @@ export default function StaffDashboardPage() {
               )}
 
               <div className="space-y-3">
-                {categories.map(category => (
+                {visibleCategories.map(category => (
                   <div key={category.id} className="border border-slate-100 rounded-xl p-4">
-                    {editingCategoryId === category.id ? (
-                      <div className="space-y-3">
-                        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-                          <input
-                            value={editCategoryName}
-                            onChange={event => setEditCategoryName(event.target.value)}
-                            placeholder="Tên danh mục *"
-                            className="h-10 px-3 border border-slate-200 rounded-lg text-sm"
-                          />
-                          <input
-                            value={editCategorySlug}
-                            onChange={event => setEditCategorySlug(event.target.value)}
-                            placeholder="Slug *"
-                            className="h-10 px-3 border border-slate-200 rounded-lg text-sm"
-                          />
-                          <input
-                            value={editCategoryDescription}
-                            onChange={event => setEditCategoryDescription(event.target.value)}
-                            placeholder="Mô tả"
-                            className="h-10 px-3 border border-slate-200 rounded-lg text-sm"
-                          />
+                    <div className="flex items-center gap-4">
+                      {category.image_url ? (
+                        <img src={category.image_url} alt={category.name} className="w-14 h-14 rounded-lg object-cover border border-slate-200 flex-shrink-0" />
+                      ) : (
+                        <div className="w-14 h-14 rounded-lg bg-slate-100 border border-slate-200 flex items-center justify-center flex-shrink-0">
+                          <ImagePlus className="w-5 h-5 text-slate-400" />
                         </div>
-                        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-                          <select
-                            value={editCategoryProductGroup}
-                            onChange={event => setEditCategoryProductGroup(event.target.value as CategoryProductGroup)}
-                            className="h-10 px-3 border border-slate-200 rounded-lg text-sm bg-white"
-                          >
-                            {categoryProductGroupOptions.map(option => (
-                              <option key={option.value} value={option.value}>{option.label}</option>
-                            ))}
-                          </select>
-                          <select
-                            value={editCategorySizeType}
-                            onChange={event => setEditCategorySizeType(event.target.value as CategorySizeType)}
-                            className="h-10 px-3 border border-slate-200 rounded-lg text-sm bg-white"
-                          >
-                            <option value="none">Không áp dụng size cố định</option>
-                            <option value="shoes">Giày dép (size 36-42)</option>
-                            <option value="apparel">Quần áo (size S-2XL)</option>
-                          </select>
-                          <div className="h-10 px-3 border border-slate-200 rounded-lg text-xs bg-white flex items-center text-slate-500">
-                            {editCategorySizeType === 'shoes' && 'Rule: 36, 37, 38, 39, 40, 41, 42'}
-                            {editCategorySizeType === 'apparel' && 'Rule: S, M, L, XL, 2XL'}
-                            {editCategorySizeType === 'none' && 'Rule: chưa cấu hình size'}
-                          </div>
-                        </div>
-                        <div className="flex items-center gap-4">
-                          <label className="inline-flex items-center gap-2 px-3 py-1.5 border border-dashed border-slate-300 rounded-lg text-sm text-blue-600 font-medium cursor-pointer hover:bg-blue-50 transition-colors">
-                            <ImagePlus className="w-4 h-4" />
-                            Đổi ảnh
-                            <input type="file" accept="image/*" onChange={event => handleCategoryImageChange(event, 'edit')} className="hidden" />
-                          </label>
-                          <span className="text-xs text-slate-500 truncate">{editCategoryImageName || 'Không có ảnh'}</span>
-                          {editCategoryImageUrl && (
-                            <img src={editCategoryImageUrl} alt="Preview" className="w-10 h-10 rounded-lg object-cover border border-slate-200" />
-                          )}
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <button
-                            onClick={() => handleUpdateCategory(category.id)}
-                            disabled={submitting}
-                            className="px-4 py-2 rounded-lg text-sm font-medium text-white bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50"
-                          >
-                            <Save className="w-4 h-4 inline mr-1" />
-                            Lưu
-                          </button>
-                          <button
-                            onClick={cancelEditCategory}
-                            className="px-4 py-2 rounded-lg text-sm font-medium text-slate-600 bg-slate-100 hover:bg-slate-200"
-                          >
-                            <X className="w-4 h-4 inline mr-1" />
-                            Hủy
-                          </button>
+                      )}
+                      <div className="flex-1 min-w-0">
+                        <p className="font-semibold text-slate-900">{category.name}</p>
+                        <p className="text-xs text-slate-500">{category.slug}</p>
+                        {category.description && <p className="text-xs text-slate-400 mt-0.5 truncate">{category.description}</p>}
+                        <p className="text-xs text-slate-500 mt-1">
+                          Nhóm: {getCategoryGroupLabel(category.product_group)}
+                        </p>
+                        <p className="text-xs text-slate-500 mt-1">
+                          {category.size_type === 'shoes' && 'Size: 36-42 (Giày dép)'}
+                          {category.size_type === 'apparel' && 'Size: S-2XL (Quần áo)'}
+                          {(!category.size_type || category.size_type === 'none') && 'Size: chưa cấu hình'}
+                        </p>
+                      </div>
+                      <div className="flex items-center gap-2 flex-shrink-0">
+                        <button
+                          onClick={() => startEditCategory(category)}
+                          className="p-2 rounded-lg text-slate-500 hover:text-blue-600 hover:bg-blue-50 transition-colors"
+                          title="Sửa"
+                        >
+                          <Pencil className="w-4 h-4" />
+                        </button>
+                        <button
+                          onClick={() => handleDeleteCategory(category.id)}
+                          disabled={submitting}
+                          className="p-2 rounded-lg text-slate-500 hover:text-rose-600 hover:bg-rose-50 transition-colors disabled:opacity-50"
+                          title="Xóa"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+                {categories.length === 0 && <p className="text-sm text-slate-500">Chưa có danh mục nào.</p>}
+              </div>
+              <div className="flex items-center justify-end gap-3">
+                <button
+                  type="button"
+                  onClick={() => setCategoriesPage(prev => Math.max(1, prev - 1))}
+                  disabled={normalizedCategoriesPage <= 1}
+                  className="h-10 px-4 rounded-xl border border-slate-200 text-slate-700 disabled:opacity-50"
+                >
+                  Trước
+                </button>
+                <span className="text-slate-700">Trang {normalizedCategoriesPage}/{categoriesTotalPages}</span>
+                <button
+                  type="button"
+                  onClick={() => setCategoriesPage(prev => Math.min(categoriesTotalPages, prev + 1))}
+                  disabled={normalizedCategoriesPage >= categoriesTotalPages}
+                  className="h-10 px-4 rounded-xl border border-slate-200 text-slate-700 disabled:opacity-50"
+                >
+                  Sau
+                </button>
+              </div>
+
+              {editingCategoryId && (
+                <div className="fixed inset-0 z-[70] bg-slate-900/35 backdrop-blur-[1px] flex items-center justify-center p-4">
+                  <div className="relative w-full max-w-3xl rounded-2xl bg-white shadow-2xl border border-slate-200 p-5 space-y-4">
+                    <button
+                      type="button"
+                      onClick={cancelEditCategory}
+                      className="absolute top-3 right-3 p-2 rounded-lg text-slate-500 hover:text-slate-700 hover:bg-slate-100"
+                      aria-label="Đóng popup sửa danh mục"
+                    >
+                      <X className="w-4 h-4" />
+                    </button>
+                    <div>
+                      <h3 className="text-lg font-bold text-slate-900">Sửa danh mục sản phẩm</h3>
+                      <p className="text-sm text-slate-500">Cập nhật thông tin danh mục trong popup.</p>
+                    </div>
+                    <div className="space-y-3">
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                        <input
+                          value={editCategoryName}
+                          onChange={event => setEditCategoryName(event.target.value)}
+                          placeholder="Tên danh mục *"
+                          className="h-10 px-3 border border-slate-200 rounded-lg text-sm"
+                        />
+                        <input
+                          value={editCategorySlug}
+                          onChange={event => setEditCategorySlug(event.target.value)}
+                          placeholder="Slug *"
+                          className="h-10 px-3 border border-slate-200 rounded-lg text-sm"
+                        />
+                        <input
+                          value={editCategoryDescription}
+                          onChange={event => setEditCategoryDescription(event.target.value)}
+                          placeholder="Mô tả"
+                          className="h-10 px-3 border border-slate-200 rounded-lg text-sm"
+                        />
+                      </div>
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                        <select
+                          value={editCategoryProductGroup}
+                          onChange={event => setEditCategoryProductGroup(event.target.value as CategoryProductGroup)}
+                          className="h-10 px-3 border border-slate-200 rounded-lg text-sm bg-white"
+                        >
+                          {categoryProductGroupOptions.map(option => (
+                            <option key={option.value} value={option.value}>{option.label}</option>
+                          ))}
+                        </select>
+                        <select
+                          value={editCategorySizeType}
+                          onChange={event => setEditCategorySizeType(event.target.value as CategorySizeType)}
+                          className="h-10 px-3 border border-slate-200 rounded-lg text-sm bg-white"
+                        >
+                          <option value="none">Không áp dụng size cố định</option>
+                          <option value="shoes">Giày dép (size 36-42)</option>
+                          <option value="apparel">Quần áo (size S-2XL)</option>
+                        </select>
+                        <div className="h-10 px-3 border border-slate-200 rounded-lg text-xs bg-white flex items-center text-slate-500">
+                          {editCategorySizeType === 'shoes' && 'Rule: 36, 37, 38, 39, 40, 41, 42'}
+                          {editCategorySizeType === 'apparel' && 'Rule: S, M, L, XL, 2XL'}
+                          {editCategorySizeType === 'none' && 'Rule: chưa cấu hình size'}
                         </div>
                       </div>
-                    ) : (
                       <div className="flex items-center gap-4">
-                        {category.image_url ? (
-                          <img src={category.image_url} alt={category.name} className="w-14 h-14 rounded-lg object-cover border border-slate-200 flex-shrink-0" />
-                        ) : (
-                          <div className="w-14 h-14 rounded-lg bg-slate-100 border border-slate-200 flex items-center justify-center flex-shrink-0">
-                            <ImagePlus className="w-5 h-5 text-slate-400" />
-                          </div>
+                        <label className="inline-flex items-center gap-2 px-3 py-1.5 border border-dashed border-slate-300 rounded-lg text-sm text-blue-600 font-medium cursor-pointer hover:bg-blue-50 transition-colors">
+                          <ImagePlus className="w-4 h-4" />
+                          Đổi ảnh
+                          <input type="file" accept="image/*" onChange={event => handleCategoryImageChange(event, 'edit')} className="hidden" />
+                        </label>
+                        <span className="text-xs text-slate-500 truncate">{editCategoryImageName || 'Không có ảnh'}</span>
+                        {editCategoryImageUrl && (
+                          <img src={editCategoryImageUrl} alt="Preview" className="w-10 h-10 rounded-lg object-cover border border-slate-200" />
                         )}
-                        <div className="flex-1 min-w-0">
-                          <p className="font-semibold text-slate-900">{category.name}</p>
-                          <p className="text-xs text-slate-500">{category.slug}</p>
-                          {category.description && <p className="text-xs text-slate-400 mt-0.5 truncate">{category.description}</p>}
+                      </div>
+                      <div className="flex items-center justify-end gap-2">
+                        <button
+                          type="button"
+                          onClick={cancelEditCategory}
+                          className="px-4 py-2 rounded-lg text-sm font-medium text-slate-600 bg-slate-100 hover:bg-slate-200"
+                        >
+                          Hủy
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (!editingCategoryId) return;
+                            handleUpdateCategory(editingCategoryId);
+                          }}
+                          disabled={submitting}
+                          className="px-4 py-2 rounded-lg text-sm font-medium text-white bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50"
+                        >
+                          <Save className="w-4 h-4 inline mr-1" />
+                          Lưu
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {activeTab === 'section_titles' && (
+            <div className="bg-white border border-slate-200 rounded-2xl p-5 space-y-5">
+              <div className="border border-slate-200 rounded-xl p-4 bg-slate-50/60 space-y-4">
+                <div className="flex items-center justify-between gap-3">
+                  <h3 className="font-semibold text-slate-900">Tiêu đề section trang chủ</h3>
+                  <button
+                    type="button"
+                    onClick={() => setIsCreateHomeSectionPopupOpen(true)}
+                    className="h-9 px-3.5 rounded-lg text-sm font-semibold text-white bg-blue-600 hover:bg-blue-700"
+                  >
+                    + Thêm tiêu đề section
+                  </button>
+                </div>
+
+                <div className="space-y-2">
+                  {homeCategorySections.map(section => (
+                    <div key={section.id} className="border border-slate-200 rounded-lg bg-white p-3 space-y-3">
+                      <div className="flex items-center justify-between gap-3">
+                        <div className="min-w-0">
+                          <p className="font-semibold text-slate-900">{section.title}</p>
                           <p className="text-xs text-slate-500 mt-1">
-                            Nhóm: {getCategoryGroupLabel(category.product_group)}
+                            Nhóm: {getCategoryGroupLabel(section.product_group)}
                           </p>
-                          <p className="text-xs text-slate-500 mt-1">
-                            {category.size_type === 'shoes' && 'Size: 36-42 (Giày dép)'}
-                            {category.size_type === 'apparel' && 'Size: S-2XL (Quần áo)'}
-                            {(!category.size_type || category.size_type === 'none') && 'Size: chưa cấu hình'}
+                          <p className="text-xs text-slate-500 mt-1 truncate">
+                            Danh mục: {section.categoryIds
+                              .map(id => categories.find(cat => cat.id === id)?.name || '')
+                              .filter(Boolean)
+                              .join(', ') || 'Chưa chọn'}
                           </p>
                         </div>
                         <div className="flex items-center gap-2 flex-shrink-0">
                           <button
-                            onClick={() => startEditCategory(category)}
+                            type="button"
+                            onClick={() => startEditHomeCategorySection(section)}
                             className="p-2 rounded-lg text-slate-500 hover:text-blue-600 hover:bg-blue-50 transition-colors"
-                            title="Sửa"
+                            title="Sửa section"
                           >
                             <Pencil className="w-4 h-4" />
                           </button>
                           <button
-                            onClick={() => handleDeleteCategory(category.id)}
+                            type="button"
+                            onClick={() => handleDeleteHomeCategorySection(section.id)}
                             disabled={submitting}
                             className="p-2 rounded-lg text-slate-500 hover:text-rose-600 hover:bg-rose-50 transition-colors disabled:opacity-50"
-                            title="Xóa"
+                            title="Xóa section"
                           >
                             <Trash2 className="w-4 h-4" />
                           </button>
                         </div>
                       </div>
-                    )}
-                  </div>
-                ))}
-                {categories.length === 0 && <p className="text-sm text-slate-500">Chưa có danh mục nào.</p>}
-              </div>
-
-              <div className="border border-slate-200 rounded-xl p-4 bg-slate-50/60 space-y-4">
-                <h3 className="font-semibold text-slate-900">Tiêu đề section trang chủ</h3>
-                <form onSubmit={handleCreateHomeCategorySection} className="space-y-3">
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                    <input
-                      value={newHomeSectionTitle}
-                      onChange={event => setNewHomeSectionTitle(event.target.value)}
-                      placeholder="Tiêu đề section (VD: Sản phẩm tennis)"
-                      className="h-10 px-3 border border-slate-200 rounded-lg text-sm bg-white"
-                    />
-                    <select
-                      value={newHomeSectionGroup}
-                      onChange={event => setNewHomeSectionGroup(event.target.value as CategoryProductGroup)}
-                      className="h-10 px-3 border border-slate-200 rounded-lg text-sm bg-white"
-                    >
-                      {categoryProductGroupOptions.map(option => (
-                        <option key={option.value} value={option.value}>{option.label}</option>
-                      ))}
-                    </select>
-                  </div>
-                  <div className="border border-slate-200 rounded-lg bg-white p-3">
-                    <p className="text-xs font-semibold text-slate-600 mb-2">Chọn danh mục hiển thị trong section</p>
-                    <div className="flex flex-wrap gap-2">
-                      {categoriesForNewSectionGroup.map(item => (
-                        <label key={item.id} className="inline-flex items-center gap-1.5 text-xs text-slate-700">
-                          <input
-                            type="checkbox"
-                            checked={newHomeSectionCategoryIds.includes(item.id)}
-                            onChange={() => handleToggleNewHomeSectionCategory(item.id)}
-                            className="rounded border-slate-300"
-                          />
-                          {item.name}
-                        </label>
-                      ))}
-                      {categoriesForNewSectionGroup.length === 0 && (
-                        <p className="text-xs text-slate-500">Nhóm này chưa có danh mục nào.</p>
-                      )}
-                    </div>
-                  </div>
-                  <div className="flex justify-end">
-                    <button
-                      type="submit"
-                      disabled={submitting}
-                      className="h-10 min-w-28 px-6 rounded-lg text-sm font-semibold text-white bg-gradient-to-r from-blue-600 to-indigo-600 shadow-sm shadow-blue-600/20 hover:from-blue-700 hover:to-indigo-700 disabled:opacity-50"
-                    >
-                      {submitting ? 'Đang thêm...' : 'Thêm tiêu đề'}
-                    </button>
-                  </div>
-                </form>
-
-                <div className="space-y-2">
-                  {homeCategorySections.map(section => (
-                    <div key={section.id} className="border border-slate-200 rounded-lg bg-white p-3 space-y-3">
-                      {editingHomeSectionId === section.id ? (
-                        <>
-                          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                            <input
-                              value={editHomeSectionTitle}
-                              onChange={event => setEditHomeSectionTitle(event.target.value)}
-                              placeholder="Tiêu đề section"
-                              className="h-10 px-3 border border-slate-200 rounded-lg text-sm bg-white"
-                            />
-                            <select
-                              value={editHomeSectionGroup}
-                              onChange={event => setEditHomeSectionGroup(event.target.value as CategoryProductGroup)}
-                              className="h-10 px-3 border border-slate-200 rounded-lg text-sm bg-white"
-                            >
-                              {categoryProductGroupOptions.map(option => (
-                                <option key={option.value} value={option.value}>{option.label}</option>
-                              ))}
-                            </select>
-                          </div>
-                          <div className="border border-slate-200 rounded-lg bg-white p-3">
-                            <p className="text-xs font-semibold text-slate-600 mb-2">Chọn danh mục hiển thị trong section</p>
-                            <div className="flex flex-wrap gap-2">
-                              {categoriesForEditSectionGroup.map(item => (
-                                <label key={item.id} className="inline-flex items-center gap-1.5 text-xs text-slate-700">
-                                  <input
-                                    type="checkbox"
-                                    checked={editHomeSectionCategoryIds.includes(item.id)}
-                                    onChange={() => handleToggleEditHomeSectionCategory(item.id)}
-                                    className="rounded border-slate-300"
-                                  />
-                                  {item.name}
-                                </label>
-                              ))}
-                              {categoriesForEditSectionGroup.length === 0 && (
-                                <p className="text-xs text-slate-500">Nhóm này chưa có danh mục nào.</p>
-                              )}
-                            </div>
-                          </div>
-                          <div className="flex justify-end gap-2">
-                            <button
-                              type="button"
-                              onClick={cancelEditHomeCategorySection}
-                              className="h-9 px-4 rounded-lg text-sm font-medium border border-slate-200 text-slate-700 hover:bg-slate-50"
-                            >
-                              Hủy
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => handleUpdateHomeCategorySection(section.id)}
-                              disabled={submitting}
-                              className="h-9 px-4 rounded-lg text-sm font-semibold text-white bg-blue-600 hover:bg-blue-700 disabled:opacity-50"
-                            >
-                              {submitting ? 'Đang lưu...' : 'Lưu sửa'}
-                            </button>
-                          </div>
-                        </>
-                      ) : (
-                        <div className="flex items-center justify-between gap-3">
-                          <div className="min-w-0">
-                            <p className="font-semibold text-slate-900">{section.title}</p>
-                            <p className="text-xs text-slate-500 mt-1">
-                              Nhóm: {getCategoryGroupLabel(section.product_group)}
-                            </p>
-                            <p className="text-xs text-slate-500 mt-1 truncate">
-                              Danh mục: {section.categoryIds
-                                .map(id => categories.find(cat => cat.id === id)?.name || '')
-                                .filter(Boolean)
-                                .join(', ') || 'Chưa chọn'}
-                            </p>
-                          </div>
-                          <div className="flex items-center gap-2 flex-shrink-0">
-                            <button
-                              type="button"
-                              onClick={() => startEditHomeCategorySection(section)}
-                              className="p-2 rounded-lg text-slate-500 hover:text-blue-600 hover:bg-blue-50 transition-colors"
-                              title="Sửa section"
-                            >
-                              <Pencil className="w-4 h-4" />
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => handleDeleteHomeCategorySection(section.id)}
-                              disabled={submitting}
-                              className="p-2 rounded-lg text-slate-500 hover:text-rose-600 hover:bg-rose-50 transition-colors disabled:opacity-50"
-                              title="Xóa section"
-                            >
-                              <Trash2 className="w-4 h-4" />
-                            </button>
-                          </div>
-                        </div>
-                      )}
                     </div>
                   ))}
                   {homeCategorySections.length === 0 && (
@@ -5336,6 +5993,154 @@ export default function StaffDashboardPage() {
                   )}
                 </div>
               </div>
+
+              {editingHomeSectionId && (
+                <div className="fixed inset-0 z-[70] bg-slate-900/35 backdrop-blur-[1px] flex items-center justify-center p-4">
+                  <div className="relative w-full max-w-2xl rounded-2xl bg-white shadow-2xl border border-slate-200 p-5 space-y-4">
+                    <button
+                      type="button"
+                      onClick={cancelEditHomeCategorySection}
+                      className="absolute top-3 right-3 p-2 rounded-lg text-slate-500 hover:text-slate-700 hover:bg-slate-100"
+                      aria-label="Đóng popup sửa section"
+                    >
+                      <X className="w-4 h-4" />
+                    </button>
+                    <div>
+                      <h3 className="text-lg font-bold text-slate-900">Sửa tiêu đề section</h3>
+                      <p className="text-sm text-slate-500">Cập nhật tiêu đề, nhóm và danh mục hiển thị.</p>
+                    </div>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                      <input
+                        value={editHomeSectionTitle}
+                        onChange={event => setEditHomeSectionTitle(event.target.value)}
+                        placeholder="Tiêu đề section"
+                        className="h-10 px-3 border border-slate-200 rounded-lg text-sm bg-white"
+                      />
+                      <select
+                        value={editHomeSectionGroup}
+                        onChange={event => setEditHomeSectionGroup(event.target.value as CategoryProductGroup)}
+                        className="h-10 px-3 border border-slate-200 rounded-lg text-sm bg-white"
+                      >
+                        {categoryProductGroupOptions.map(option => (
+                          <option key={option.value} value={option.value}>{option.label}</option>
+                        ))}
+                      </select>
+                    </div>
+                    <div className="border border-slate-200 rounded-lg bg-white p-3">
+                      <p className="text-xs font-semibold text-slate-600 mb-2">Chọn danh mục hiển thị trong section</p>
+                      <div className="flex flex-wrap gap-2">
+                        {categoriesForEditSectionGroup.map(item => (
+                          <label key={item.id} className="inline-flex items-center gap-1.5 text-xs text-slate-700">
+                            <input
+                              type="checkbox"
+                              checked={editHomeSectionCategoryIds.includes(item.id)}
+                              onChange={() => handleToggleEditHomeSectionCategory(item.id)}
+                              className="rounded border-slate-300"
+                            />
+                            {item.name}
+                          </label>
+                        ))}
+                        {categoriesForEditSectionGroup.length === 0 && (
+                          <p className="text-xs text-slate-500">Nhóm này chưa có danh mục nào.</p>
+                        )}
+                      </div>
+                    </div>
+                    <div className="flex justify-end gap-2">
+                      <button
+                        type="button"
+                        onClick={cancelEditHomeCategorySection}
+                        className="h-9 px-4 rounded-lg text-sm font-medium border border-slate-200 text-slate-700 hover:bg-slate-50"
+                      >
+                        Hủy
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (!editingHomeSectionId) return;
+                          handleUpdateHomeCategorySection(editingHomeSectionId);
+                        }}
+                        disabled={submitting}
+                        className="h-9 px-4 rounded-lg text-sm font-semibold text-white bg-blue-600 hover:bg-blue-700 disabled:opacity-50"
+                      >
+                        {submitting ? 'Đang lưu...' : 'Lưu sửa'}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {isCreateHomeSectionPopupOpen && (
+                <div className="fixed inset-0 z-[70] bg-slate-900/35 backdrop-blur-[1px] flex items-center justify-center p-4">
+                  <div className="relative w-full max-w-2xl rounded-2xl bg-white shadow-2xl border border-slate-200 p-5 space-y-4">
+                    <button
+                      type="button"
+                      onClick={() => setIsCreateHomeSectionPopupOpen(false)}
+                      className="absolute top-3 right-3 p-2 rounded-lg text-slate-500 hover:text-slate-700 hover:bg-slate-100"
+                      aria-label="Đóng popup thêm tiêu đề section"
+                    >
+                      <X className="w-4 h-4" />
+                    </button>
+                    <div>
+                      <h3 className="text-lg font-bold text-slate-900">Thêm tiêu đề section trang chủ</h3>
+                      <p className="text-sm text-slate-500">Tạo section mới để hiển thị danh mục trên trang chủ.</p>
+                    </div>
+                    <form onSubmit={handleCreateHomeCategorySection} className="space-y-3">
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                        <input
+                          value={newHomeSectionTitle}
+                          onChange={event => setNewHomeSectionTitle(event.target.value)}
+                          placeholder="Tiêu đề section (VD: Sản phẩm tennis)"
+                          className="h-10 px-3 border border-slate-200 rounded-lg text-sm bg-white"
+                        />
+                        <select
+                          value={newHomeSectionGroup}
+                          onChange={event => setNewHomeSectionGroup(event.target.value as CategoryProductGroup)}
+                          className="h-10 px-3 border border-slate-200 rounded-lg text-sm bg-white"
+                        >
+                          {categoryProductGroupOptions.map(option => (
+                            <option key={option.value} value={option.value}>{option.label}</option>
+                          ))}
+                        </select>
+                      </div>
+                      <div className="border border-slate-200 rounded-lg bg-white p-3">
+                        <p className="text-xs font-semibold text-slate-600 mb-2">Chọn danh mục hiển thị trong section</p>
+                        <div className="flex flex-wrap gap-2">
+                          {categoriesForNewSectionGroup.map(item => (
+                            <label key={item.id} className="inline-flex items-center gap-1.5 text-xs text-slate-700">
+                              <input
+                                type="checkbox"
+                                checked={newHomeSectionCategoryIds.includes(item.id)}
+                                onChange={() => handleToggleNewHomeSectionCategory(item.id)}
+                                className="rounded border-slate-300"
+                              />
+                              {item.name}
+                            </label>
+                          ))}
+                          {categoriesForNewSectionGroup.length === 0 && (
+                            <p className="text-xs text-slate-500">Nhóm này chưa có danh mục nào.</p>
+                          )}
+                        </div>
+                      </div>
+                      <div className="flex justify-end gap-2">
+                        <button
+                          type="button"
+                          onClick={() => setIsCreateHomeSectionPopupOpen(false)}
+                          className="h-10 px-4 rounded-lg text-sm font-medium border border-slate-200 text-slate-700 hover:bg-slate-50"
+                        >
+                          Đóng
+                        </button>
+                        <button
+                          type="submit"
+                          disabled={submitting}
+                          className="h-10 min-w-28 px-6 rounded-lg text-sm font-semibold text-white bg-gradient-to-r from-blue-600 to-indigo-600 shadow-sm shadow-blue-600/20 hover:from-blue-700 hover:to-indigo-700 disabled:opacity-50"
+                        >
+                          {submitting ? 'Đang thêm...' : 'Thêm tiêu đề'}
+                        </button>
+                      </div>
+                    </form>
+                  </div>
+                </div>
+              )}
             </div>
           )}
 
@@ -5349,207 +6154,309 @@ export default function StaffDashboardPage() {
                   ? 'Admin có thể xem, chỉnh sửa hoặc xóa tài khoản khi cần.'
                   : 'Bạn đang ở chế độ xem. Chỉ admin mới có quyền chỉnh sửa hoặc xóa tài khoản.'}
               </p>
-              {isAdmin && (
-                <form onSubmit={handleCreateAccount} className="border border-slate-200 rounded-xl p-4 bg-slate-50/60 space-y-3">
-                  <h3 className="font-semibold text-slate-900">Tạo tài khoản</h3>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                    <input
-                      value={newAccountFullName}
-                      onChange={event => setNewAccountFullName(event.target.value)}
-                      placeholder="Tên"
-                      className="h-10 px-3 border border-slate-200 rounded-lg text-sm bg-white"
-                    />
-                    <input
-                      type="email"
-                      value={newAccountEmail}
-                      onChange={event => setNewAccountEmail(event.target.value)}
-                      placeholder="Email *"
-                      className="h-10 px-3 border border-slate-200 rounded-lg text-sm bg-white"
-                      required
-                    />
-                    <div className="relative">
-                      <input
-                        type={showNewAccountPassword ? 'text' : 'password'}
-                        value={newAccountPassword}
-                        onChange={event => setNewAccountPassword(event.target.value)}
-                        placeholder="Mật khẩu * (ít nhất 6 ký tự)"
-                        className="h-10 w-full px-3 pr-10 border border-slate-200 rounded-lg text-sm bg-white"
-                        required
-                      />
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                {isAdmin && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setCreateAccountError('');
+                      setCreateAccountMessage('');
+                      setIsCreateAccountPopupOpen(true);
+                    }}
+                    className="h-8 px-3 rounded-lg text-xs font-semibold text-white bg-blue-600 hover:bg-blue-700 inline-flex items-center gap-1.5"
+                  >
+                    <Plus className="w-3.5 h-3.5" />
+                    Thêm tài khoản
+                  </button>
+                )}
+                <div className="w-full sm:max-w-sm sm:ml-auto">
+                  <input
+                    type="text"
+                    value={accountsSearchKeyword}
+                    onChange={event => setAccountsSearchKeyword(event.target.value)}
+                    placeholder="Tìm theo tên hoặc email"
+                    className="w-full h-8 px-3 border border-slate-200 rounded-lg text-xs bg-white"
+                  />
+                </div>
+              </div>
+              {isAdmin && isCreateAccountPopupOpen && (
+                <div className="fixed inset-0 z-[70] bg-slate-900/35 backdrop-blur-[1px] flex items-center justify-center p-4">
+                  <div className="w-full max-w-3xl rounded-xl bg-white border border-slate-200 shadow-xl p-4 space-y-3">
+                    <div className="flex items-center justify-between">
+                      <h3 className="font-semibold text-slate-900">Tạo tài khoản</h3>
                       <button
                         type="button"
-                        onClick={() => setShowNewAccountPassword(prev => !prev)}
-                        className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-700 p-1"
-                        title={showNewAccountPassword ? 'Ẩn mật khẩu' : 'Hiện mật khẩu'}
+                        onClick={() => {
+                          setIsCreateAccountPopupOpen(false);
+                          setShowNewAccountPassword(false);
+                        }}
+                        className="p-1.5 rounded-md text-slate-500 hover:text-slate-700 hover:bg-slate-100"
+                        aria-label="Đóng popup tạo tài khoản"
                       >
-                        {showNewAccountPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                        <X className="w-4 h-4" />
                       </button>
                     </div>
-                    <input
-                      value={newAccountPhone}
-                      onChange={event => setNewAccountPhone(event.target.value)}
-                      placeholder="SĐT (không bắt buộc)"
-                      className="h-10 px-3 border border-slate-200 rounded-lg text-sm bg-white"
-                    />
-                    <select
-                      value={newAccountRole}
-                      onChange={event => setNewAccountRole(event.target.value as 'customer' | 'staff')}
-                      className="h-10 px-3 border border-slate-200 rounded-lg text-sm bg-white"
-                    >
-                      <option value="customer">Khách hàng</option>
-                      <option value="staff">Nhân viên</option>
-                    </select>
-                    <input
-                      value={newAccountAddress}
-                      onChange={event => setNewAccountAddress(event.target.value)}
-                      placeholder="Địa chỉ (không bắt buộc)"
-                      className="h-10 px-3 border border-slate-200 rounded-lg text-sm bg-white md:col-span-2"
-                    />
+                    <form onSubmit={handleCreateAccount} className="space-y-3">
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                        <input
+                          value={newAccountFullName}
+                          onChange={event => setNewAccountFullName(event.target.value)}
+                          placeholder="Tên"
+                          className="h-10 px-3 border border-slate-200 rounded-lg text-sm bg-white"
+                        />
+                        <input
+                          type="email"
+                          value={newAccountEmail}
+                          onChange={event => setNewAccountEmail(event.target.value)}
+                          placeholder="Email *"
+                          className="h-10 px-3 border border-slate-200 rounded-lg text-sm bg-white"
+                          required
+                        />
+                        <div className="relative">
+                          <input
+                            type={showNewAccountPassword ? 'text' : 'password'}
+                            value={newAccountPassword}
+                            onChange={event => setNewAccountPassword(event.target.value)}
+                            placeholder="Mật khẩu * (ít nhất 6 ký tự)"
+                            className="h-10 w-full px-3 pr-10 border border-slate-200 rounded-lg text-sm bg-white"
+                            required
+                          />
+                          <button
+                            type="button"
+                            onClick={() => setShowNewAccountPassword(prev => !prev)}
+                            className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-700 p-1"
+                            title={showNewAccountPassword ? 'Ẩn mật khẩu' : 'Hiện mật khẩu'}
+                          >
+                            {showNewAccountPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                          </button>
+                        </div>
+                        <input
+                          value={newAccountPhone}
+                          onChange={event => setNewAccountPhone(event.target.value)}
+                          placeholder="SĐT (không bắt buộc)"
+                          className="h-10 px-3 border border-slate-200 rounded-lg text-sm bg-white"
+                        />
+                        <select
+                          value={newAccountRole}
+                          onChange={event => setNewAccountRole(event.target.value as 'customer' | 'staff')}
+                          className="h-10 px-3 border border-slate-200 rounded-lg text-sm bg-white"
+                        >
+                          <option value="customer">Khách hàng</option>
+                          <option value="staff">Nhân viên</option>
+                        </select>
+                        <input
+                          value={newAccountAddress}
+                          onChange={event => setNewAccountAddress(event.target.value)}
+                          placeholder="Địa chỉ (không bắt buộc)"
+                          className="h-10 px-3 border border-slate-200 rounded-lg text-sm bg-white"
+                        />
+                      </div>
+                      {createAccountMessage && (
+                        <p className="text-sm text-emerald-700">{createAccountMessage}</p>
+                      )}
+                      {createAccountError && (
+                        <p className="text-sm text-rose-600">{createAccountError}</p>
+                      )}
+                      <div className="pt-1 flex items-center justify-end gap-2">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setIsCreateAccountPopupOpen(false);
+                            setShowNewAccountPassword(false);
+                          }}
+                          className="px-4 py-2 rounded-lg text-sm font-medium text-slate-700 bg-slate-100 hover:bg-slate-200"
+                        >
+                          Đóng
+                        </button>
+                        <button
+                          type="submit"
+                          disabled={submitting}
+                          className="px-4 py-2 rounded-lg text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 disabled:opacity-50"
+                        >
+                          {submitting ? 'Đang tạo...' : 'Tạo tài khoản'}
+                        </button>
+                      </div>
+                    </form>
                   </div>
-                  {createAccountMessage && (
-                    <p className="text-sm text-emerald-700">{createAccountMessage}</p>
-                  )}
-                  {createAccountError && (
-                    <p className="text-sm text-rose-600">{createAccountError}</p>
-                  )}
-                  <div className="pt-1">
-                    <button
-                      type="submit"
-                      disabled={submitting}
-                      className="px-4 py-2 rounded-lg text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 disabled:opacity-50"
-                    >
-                      {submitting ? 'Đang tạo...' : 'Tạo tài khoản'}
-                    </button>
-                  </div>
-                </form>
+                </div>
               )}
               {(activeTab === 'customers' ? visibleCustomerAccounts : visibleEmployeeAccounts).map(account => {
                 const stats = customerStats.get(account.id) || { orderCount: 0, totalSpent: 0 };
-                const isEditing = editingAccountId === account.id;
                 return (
                   <div key={account.id} className="border border-slate-100 rounded-xl p-4 space-y-2">
-                    {isEditing ? (
-                      <>
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                          <input
-                            value={editAccountFullName}
-                            onChange={event => setEditAccountFullName(event.target.value)}
-                            placeholder="Họ tên"
-                            className="h-10 px-3 border border-slate-200 rounded-lg text-sm"
-                            autoComplete="off"
-                          />
-                          <input
-                            type="email"
-                            value={editAccountEmail}
-                            onChange={event => setEditAccountEmail(event.target.value)}
-                            placeholder="Email"
-                            className="h-10 px-3 border border-slate-200 rounded-lg text-sm"
-                            autoComplete="off"
-                          />
-                          <input
-                            value={editAccountPhone}
-                            onChange={event => setEditAccountPhone(event.target.value)}
-                            placeholder="Số điện thoại"
-                            className="h-10 px-3 border border-slate-200 rounded-lg text-sm"
-                            autoComplete="off"
-                          />
-                          <input
-                            value={editAccountAddress}
-                            onChange={event => setEditAccountAddress(event.target.value)}
-                            placeholder="Địa chỉ"
-                            className="h-10 px-3 border border-slate-200 rounded-lg text-sm"
-                            autoComplete="off"
-                          />
-                          <select
-                            value={editAccountRole}
-                            onChange={event => setEditAccountRole(event.target.value as 'customer' | 'staff')}
-                            className="h-10 px-3 border border-slate-200 rounded-lg text-sm bg-white"
-                          >
-                            <option value="customer">Khách hàng</option>
-                            <option value="staff">Nhân viên</option>
-                          </select>
-                          <div className="relative">
-                            <input
-                              type={showEditAccountPassword ? 'text' : 'password'}
-                              value={editAccountNewPassword}
-                              onChange={event => setEditAccountNewPassword(event.target.value)}
-                              placeholder="Mật khẩu mới (để trống nếu không đổi)"
-                              className="h-10 w-full px-3 pr-10 border border-slate-200 rounded-lg text-sm bg-white"
-                              autoComplete="new-password"
-                            />
-                            <button
-                              type="button"
-                              onClick={() => setShowEditAccountPassword(prev => !prev)}
-                              className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-700 p-1"
-                              title={showEditAccountPassword ? 'Ẩn mật khẩu' : 'Hiện mật khẩu'}
-                            >
-                              {showEditAccountPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                            </button>
-                          </div>
-                        </div>
+                    <>
+                      <p className="font-semibold text-slate-900">{account.full_name || 'Chưa cập nhật tên'}</p>
+                      <p className="text-sm text-slate-500">Email: {account.email || ''}</p>
+                      <p className="text-sm text-slate-500">SĐT: {account.phone || ''}</p>
+                      <p className="text-sm text-slate-500">Địa chỉ: {account.address || ''}</p>
+                      <p className="text-sm text-slate-500">
+                        Vai trò: {(account.role || 'customer') === 'staff' ? 'Nhân viên' : 'Khách hàng'}
+                      </p>
+                      <p className="text-sm text-slate-600 mt-1">
+                        Số đơn: <span className="font-medium">{stats.orderCount}</span> - Tổng mua: <span className="font-medium">{formatPrice(stats.totalSpent)}</span>
+                      </p>
+                      {isAdmin && (
                         <div className="flex items-center gap-2 pt-1">
                           <button
                             type="button"
-                            onClick={() => handleUpdateAccount(account.id)}
-                            disabled={submitting}
-                            className="px-4 py-2 rounded-lg text-sm font-medium text-white bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50"
+                            onClick={() => startEditAccount(account)}
+                            className="px-3 py-2 rounded-lg text-sm font-medium text-slate-700 bg-slate-100 hover:bg-slate-200"
                           >
-                            <Save className="w-4 h-4 inline mr-1" />
-                            Lưu
+                            <Pencil className="w-4 h-4 inline mr-1" />
+                            Chỉnh sửa
                           </button>
                           <button
                             type="button"
-                            onClick={cancelEditAccount}
-                            className="px-4 py-2 rounded-lg text-sm font-medium text-slate-600 bg-slate-100 hover:bg-slate-200"
+                            onClick={() => handleDeleteAccount(account.id)}
+                            disabled={submitting}
+                            className="px-3 py-2 rounded-lg text-sm font-medium text-white bg-rose-600 hover:bg-rose-700 disabled:opacity-50"
                           >
-                            <X className="w-4 h-4 inline mr-1" />
-                            Hủy
+                            <Trash2 className="w-4 h-4 inline mr-1" />
+                            Xóa
                           </button>
                         </div>
-                      </>
-                    ) : (
-                      <>
-                        <p className="font-semibold text-slate-900">{account.full_name || 'Chưa cập nhật tên'}</p>
-                        <p className="text-sm text-slate-500">Email: {account.email || ''}</p>
-                        <p className="text-sm text-slate-500">SĐT: {account.phone || ''}</p>
-                        <p className="text-sm text-slate-500">Địa chỉ: {account.address || ''}</p>
-                        <p className="text-sm text-slate-500">
-                          Vai trò: {(account.role || 'customer') === 'staff' ? 'Nhân viên' : 'Khách hàng'}
-                        </p>
-                        <p className="text-sm text-slate-600 mt-1">
-                          Số đơn: <span className="font-medium">{stats.orderCount}</span> - Tổng mua: <span className="font-medium">{formatPrice(stats.totalSpent)}</span>
-                        </p>
-                        {isAdmin && (
-                          <div className="flex items-center gap-2 pt-1">
-                            <button
-                              type="button"
-                              onClick={() => startEditAccount(account)}
-                              className="px-3 py-2 rounded-lg text-sm font-medium text-slate-700 bg-slate-100 hover:bg-slate-200"
-                            >
-                              <Pencil className="w-4 h-4 inline mr-1" />
-                              Chỉnh sửa
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => handleDeleteAccount(account.id)}
-                              disabled={submitting}
-                              className="px-3 py-2 rounded-lg text-sm font-medium text-white bg-rose-600 hover:bg-rose-700 disabled:opacity-50"
-                            >
-                              <Trash2 className="w-4 h-4 inline mr-1" />
-                              Xóa
-                            </button>
-                          </div>
-                        )}
-                      </>
-                    )}
+                      )}
+                    </>
                   </div>
                 );
               })}
+              {isAdmin && editingAccountId && (
+                <div className="fixed inset-0 z-[70] bg-slate-900/35 backdrop-blur-[1px] flex items-center justify-center p-4">
+                  <div className="w-full max-w-3xl rounded-xl bg-white border border-slate-200 shadow-xl p-4 space-y-3">
+                    <div className="flex items-center justify-between">
+                      <h3 className="font-semibold text-slate-900">Chỉnh sửa tài khoản</h3>
+                      <button
+                        type="button"
+                        onClick={cancelEditAccount}
+                        className="p-1.5 rounded-md text-slate-500 hover:text-slate-700 hover:bg-slate-100"
+                        aria-label="Đóng popup chỉnh sửa tài khoản"
+                      >
+                        <X className="w-4 h-4" />
+                      </button>
+                    </div>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                      <input
+                        value={editAccountFullName}
+                        onChange={event => setEditAccountFullName(event.target.value)}
+                        placeholder="Họ tên"
+                        className="h-10 px-3 border border-slate-200 rounded-lg text-sm bg-white"
+                        autoComplete="off"
+                      />
+                      <input
+                        type="email"
+                        value={editAccountEmail}
+                        onChange={event => setEditAccountEmail(event.target.value)}
+                        placeholder="Email"
+                        className="h-10 px-3 border border-slate-200 rounded-lg text-sm bg-white"
+                        autoComplete="off"
+                      />
+                      <input
+                        value={editAccountPhone}
+                        onChange={event => setEditAccountPhone(event.target.value)}
+                        placeholder="Số điện thoại"
+                        className="h-10 px-3 border border-slate-200 rounded-lg text-sm bg-white"
+                        autoComplete="off"
+                      />
+                      <input
+                        value={editAccountAddress}
+                        onChange={event => setEditAccountAddress(event.target.value)}
+                        placeholder="Địa chỉ"
+                        className="h-10 px-3 border border-slate-200 rounded-lg text-sm bg-white"
+                        autoComplete="off"
+                      />
+                      <select
+                        value={editAccountRole}
+                        onChange={event => setEditAccountRole(event.target.value as 'customer' | 'staff')}
+                        className="h-10 px-3 border border-slate-200 rounded-lg text-sm bg-white"
+                      >
+                        <option value="customer">Khách hàng</option>
+                        <option value="staff">Nhân viên</option>
+                      </select>
+                      <div className="relative">
+                        <input
+                          type={showEditAccountPassword ? 'text' : 'password'}
+                          value={editAccountNewPassword}
+                          onChange={event => setEditAccountNewPassword(event.target.value)}
+                          placeholder="Mật khẩu mới (để trống nếu không đổi)"
+                          className="h-10 w-full px-3 pr-10 border border-slate-200 rounded-lg text-sm bg-white"
+                          autoComplete="new-password"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setShowEditAccountPassword(prev => !prev)}
+                          className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-700 p-1"
+                          title={showEditAccountPassword ? 'Ẩn mật khẩu' : 'Hiện mật khẩu'}
+                        >
+                          {showEditAccountPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                        </button>
+                      </div>
+                    </div>
+                    <div className="pt-1 flex items-center justify-end gap-2">
+                      <button
+                        type="button"
+                        onClick={cancelEditAccount}
+                        className="px-4 py-2 rounded-lg text-sm font-medium text-slate-700 bg-slate-100 hover:bg-slate-200"
+                      >
+                        Đóng
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleUpdateAccount(editingAccountId)}
+                        disabled={submitting}
+                        className="px-4 py-2 rounded-lg text-sm font-medium text-white bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50"
+                      >
+                        {submitting ? 'Đang lưu...' : 'Lưu'}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
               {(activeTab === 'customers' ? visibleCustomerAccounts.length === 0 : visibleEmployeeAccounts.length === 0) && (
                 <p className="text-sm text-slate-500">
-                  {activeTab === 'customers' ? 'Chưa có tài khoản khách hàng nào.' : 'Chưa có tài khoản nhân viên nào.'}
+                  {accountsSearchKeyword.trim()
+                    ? 'Không tìm thấy tài khoản phù hợp theo tên hoặc email.'
+                    : activeTab === 'customers'
+                      ? 'Chưa có tài khoản khách hàng nào.'
+                      : 'Chưa có tài khoản nhân viên nào.'}
                 </p>
               )}
+              <div className="flex items-center justify-end gap-3">
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (activeTab === 'customers') {
+                      setCustomerAccountsPage(prev => Math.max(1, prev - 1));
+                      return;
+                    }
+                    setEmployeeAccountsPage(prev => Math.max(1, prev - 1));
+                  }}
+                  disabled={activeTab === 'customers' ? normalizedCustomerAccountsPage <= 1 : normalizedEmployeeAccountsPage <= 1}
+                  className="h-10 px-4 rounded-xl border border-slate-200 text-slate-700 disabled:opacity-50"
+                >
+                  Trước
+                </button>
+                <span className="text-slate-700">
+                  {activeTab === 'customers'
+                    ? `Trang ${normalizedCustomerAccountsPage}/${customerAccountsTotalPages}`
+                    : `Trang ${normalizedEmployeeAccountsPage}/${employeeAccountsTotalPages}`}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (activeTab === 'customers') {
+                      setCustomerAccountsPage(prev => Math.min(customerAccountsTotalPages, prev + 1));
+                      return;
+                    }
+                    setEmployeeAccountsPage(prev => Math.min(employeeAccountsTotalPages, prev + 1));
+                  }}
+                  disabled={activeTab === 'customers'
+                    ? normalizedCustomerAccountsPage >= customerAccountsTotalPages
+                    : normalizedEmployeeAccountsPage >= employeeAccountsTotalPages}
+                  className="h-10 px-4 rounded-xl border border-slate-200 text-slate-700 disabled:opacity-50"
+                >
+                  Sau
+                </button>
+              </div>
             </div>
           )}
 
@@ -5613,6 +6520,66 @@ export default function StaffDashboardPage() {
             </div>
           )}
 
+          {activeTab === 'contact_content' && (
+            <div className="bg-white border border-slate-200 rounded-2xl p-5 space-y-4">
+              <h2 className="text-lg font-bold text-slate-900">Quản lý nội dung Liên hệ</h2>
+              {!contactFeatureEnabled && (
+                <div className="p-4 rounded-xl bg-amber-50 border border-amber-200 text-amber-800 text-sm">
+                  Chưa có bảng `site_contents` trong database hoặc API chưa mở bảng này.
+                </div>
+              )}
+              {contactFeatureEnabled && (
+                <>
+                  <p className="text-sm text-slate-600">
+                    Nội dung tại đây sẽ hiển thị trên trang `Liên hệ` ở header và chỉ hiển thị dạng văn bản.
+                  </p>
+                  <textarea
+                    value={contactContentValue}
+                    onChange={event => setContactContentValue(event.target.value)}
+                    rows={14}
+                    disabled={!isAdmin}
+                    placeholder="Nhập nội dung liên hệ..."
+                    className="w-full rounded-xl border border-slate-200 px-3 py-3 text-sm text-slate-700 bg-white focus:outline-none focus:ring-2 focus:ring-blue-200 disabled:bg-slate-100"
+                  />
+                  {contactContentError && <p className="text-sm text-rose-600">{contactContentError}</p>}
+                  {contactContentMessage && <p className="text-sm text-emerald-700">{contactContentMessage}</p>}
+                  <div className="flex items-center justify-end gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setShowContactPreview(prev => !prev)}
+                      className="px-4 py-2 rounded-lg text-sm font-medium text-slate-700 bg-slate-100 hover:bg-slate-200"
+                    >
+                      {showContactPreview ? 'Ẩn xem trước' : 'Xem trước'}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleSaveContactContent}
+                      disabled={submitting || !isAdmin}
+                      className="px-4 py-2 rounded-lg text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 disabled:opacity-50"
+                    >
+                      {submitting ? 'Đang lưu...' : 'Lưu nội dung'}
+                    </button>
+                  </div>
+                  {showContactPreview && (
+                    <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                      <p className="text-xs font-semibold tracking-wider text-slate-500 uppercase mb-3">Xem trước trang Liên hệ</p>
+                      <h3 className="text-2xl font-extrabold text-slate-900 uppercase mb-4">Liên hệ</h3>
+                      <div className="space-y-3 text-[17px] leading-8 text-slate-700">
+                        {String(contactContentValue || '')
+                          .split('\n')
+                          .map(item => item.trim())
+                          .filter(Boolean)
+                          .map((paragraph, index) => (
+                            <p key={`preview-contact-${index}`}>{paragraph}</p>
+                          ))}
+                      </div>
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
+          )}
+
           {activeTab === 'support' && (
             <div className="bg-white border border-slate-200 rounded-2xl p-5 space-y-4">
               <h2 className="text-lg font-bold text-slate-900">Xử lý yêu cầu hỗ trợ</h2>
@@ -5623,9 +6590,22 @@ export default function StaffDashboardPage() {
               )}
               {supportFeatureEnabled && visibleSupportRequests.map(item => (
                 <div key={item.id} className="border border-slate-100 rounded-xl p-4">
-                  <p className="font-semibold text-slate-900">{item.subject}</p>
-                  <p className="text-sm text-slate-600 mt-1">{item.message}</p>
-                  <p className="text-xs text-slate-500 mt-2">{item.full_name} - {item.email} - {formatDate(item.created_at)}</p>
+                  {(() => {
+                    const rawMessage = String(item.message || '');
+                    const fallbackPhone = extractPhoneFromSupportMessage(rawMessage);
+                    const supportPhone = String(item.phone || fallbackPhone || '').trim();
+                    const normalizedMessage = fallbackPhone
+                      ? rawMessage.replace(/^SĐT:\s*[^\n]+\n\n/i, '').trim()
+                      : rawMessage;
+                    return (
+                      <>
+                        <p className="font-semibold text-slate-900">
+                          Họ và tên: {item.full_name || 'Chưa có tên'} | Email: {item.email || 'Chưa có email'} | Số điện thoại: {supportPhone || 'Chưa có SĐT'} | Nội dung: {normalizedMessage || 'Chưa có nội dung'}
+                        </p>
+                        <p className="text-xs text-slate-500 mt-1">{formatDate(item.created_at)}</p>
+                      </>
+                    );
+                  })()}
                   <div className="flex items-center gap-2 mt-3">
                     <select
                       value={supportStatusDrafts[item.id] || item.status}
@@ -5649,6 +6629,25 @@ export default function StaffDashboardPage() {
               {supportFeatureEnabled && supportRequests.length === 0 && (
                 <p className="text-sm text-slate-500">Chưa có yêu cầu hỗ trợ nào.</p>
               )}
+              <div className="flex items-center justify-end gap-3">
+                <button
+                  type="button"
+                  onClick={() => setSupportPage(prev => Math.max(1, prev - 1))}
+                  disabled={normalizedSupportPage <= 1}
+                  className="h-10 px-4 rounded-xl border border-slate-200 text-slate-700 disabled:opacity-50"
+                >
+                  Trước
+                </button>
+                <span className="text-slate-700">Trang {normalizedSupportPage}/{supportTotalPages}</span>
+                <button
+                  type="button"
+                  onClick={() => setSupportPage(prev => Math.min(supportTotalPages, prev + 1))}
+                  disabled={normalizedSupportPage >= supportTotalPages}
+                  className="h-10 px-4 rounded-xl border border-slate-200 text-slate-700 disabled:opacity-50"
+                >
+                  Sau
+                </button>
+              </div>
             </div>
           )}
 
@@ -5832,18 +6831,136 @@ export default function StaffDashboardPage() {
                             {item.starts_at ? formatDate(item.starts_at) : '--'} - {item.ends_at ? formatDate(item.ends_at) : '--'}
                           </p>
                         </div>
-                        <button
-                          onClick={() => handlePromotionToggle(item.id)}
-                          disabled={submitting}
-                          className={`px-3 py-2 rounded-lg text-sm font-medium text-white ${
-                            isActive ? 'bg-rose-600 hover:bg-rose-700' : 'bg-emerald-600 hover:bg-emerald-700'
-                          } disabled:opacity-50`}
-                        >
-                          {isActive ? 'Tắt khuyến mãi' : 'Kích hoạt'}
-                        </button>
+                        <div className="flex items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={() => handleOpenEditPromotion(item)}
+                            disabled={submitting}
+                            className="px-3 py-2 rounded-lg text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 disabled:opacity-50"
+                          >
+                            Sửa
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleDeletePromotion(item.id)}
+                            disabled={submitting}
+                            className="px-3 py-2 rounded-lg text-sm font-medium text-white bg-rose-700 hover:bg-rose-800 disabled:opacity-50"
+                          >
+                            Xóa
+                          </button>
+                          <button
+                            onClick={() => handlePromotionToggle(item.id)}
+                            disabled={submitting}
+                            className={`px-3 py-2 rounded-lg text-sm font-medium text-white ${
+                              isActive ? 'bg-rose-600 hover:bg-rose-700' : 'bg-emerald-600 hover:bg-emerald-700'
+                            } disabled:opacity-50`}
+                          >
+                            {isActive ? 'Tắt khuyến mãi' : 'Kích hoạt'}
+                          </button>
+                        </div>
                       </div>
                     );
                   })}
+
+                  {isEditPromotionPopupOpen && (
+                    <div className="fixed inset-0 z-[70] bg-slate-900/35 backdrop-blur-[1px] flex items-center justify-center p-4">
+                      <div className="relative w-full max-w-3xl rounded-2xl bg-white shadow-2xl border border-slate-200 p-5 space-y-4">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setIsEditPromotionPopupOpen(false);
+                            setEditingPromotionId('');
+                          }}
+                          className="absolute top-3 right-3 p-2 rounded-lg text-slate-500 hover:text-slate-700 hover:bg-slate-100"
+                          aria-label="Đóng popup sửa khuyến mãi"
+                        >
+                          <X className="w-4 h-4" />
+                        </button>
+                        <h3 className="text-lg font-bold text-slate-900">Sửa mã khuyến mãi</h3>
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                          <input
+                            value={editPromotionCode}
+                            onChange={event => setEditPromotionCode(event.target.value.toUpperCase())}
+                            placeholder="Mã (VD: SUMMER10)"
+                            className="h-10 px-3 border border-slate-200 rounded-lg text-sm text-slate-900 bg-white"
+                          />
+                          <input
+                            value={editPromotionName}
+                            onChange={event => setEditPromotionName(event.target.value)}
+                            placeholder="Tên chiến dịch"
+                            className="h-10 px-3 border border-slate-200 rounded-lg text-sm text-slate-900 bg-white"
+                          />
+                          <input
+                            type="number"
+                            min={1}
+                            max={99}
+                            value={editPromotionDiscountPercent}
+                            onChange={event => setEditPromotionDiscountPercent(event.target.value)}
+                            placeholder="% giảm (1-99)"
+                            className="h-10 px-3 border border-slate-200 rounded-lg text-sm text-slate-900 bg-white"
+                          />
+                          <input
+                            type="number"
+                            min={0}
+                            value={editPromotionMinOrder}
+                            onChange={event => setEditPromotionMinOrder(event.target.value)}
+                            placeholder="Đơn tối thiểu áp mã (VND)"
+                            className="h-10 px-3 border border-slate-200 rounded-lg text-sm text-slate-900 bg-white"
+                          />
+                          <input
+                            type="number"
+                            min={1}
+                            value={editPromotionMaxUses}
+                            onChange={event => setEditPromotionMaxUses(event.target.value)}
+                            placeholder="Số lần dùng tối đa cho mỗi user"
+                            className="h-10 px-3 border border-slate-200 rounded-lg text-sm text-slate-900 bg-white"
+                          />
+                          <label className="h-10 px-3 border border-slate-200 rounded-lg text-sm text-slate-900 bg-white inline-flex items-center gap-2">
+                            <input
+                              type="checkbox"
+                              checked={editPromotionIsActive}
+                              onChange={event => setEditPromotionIsActive(event.target.checked)}
+                            />
+                            Kích hoạt hiển thị
+                          </label>
+                          <input
+                            type="datetime-local"
+                            value={editPromotionStartsAt}
+                            onChange={event => setEditPromotionStartsAt(event.target.value)}
+                            placeholder="Ngày bắt đầu"
+                            className="h-10 px-3 border border-slate-200 rounded-lg text-sm text-slate-900 bg-white"
+                          />
+                          <input
+                            type="datetime-local"
+                            value={editPromotionEndsAt}
+                            onChange={event => setEditPromotionEndsAt(event.target.value)}
+                            placeholder="Ngày kết thúc"
+                            className="h-10 px-3 border border-slate-200 rounded-lg text-sm text-slate-900 bg-white"
+                          />
+                        </div>
+                        <div className="flex justify-end gap-2">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setIsEditPromotionPopupOpen(false);
+                              setEditingPromotionId('');
+                            }}
+                            className="h-9 px-4 rounded-lg text-sm font-medium border border-slate-200 text-slate-700 hover:bg-slate-50"
+                          >
+                            Hủy
+                          </button>
+                          <button
+                            type="button"
+                            onClick={handleUpdatePromotion}
+                            disabled={submitting}
+                            className="h-9 px-4 rounded-lg text-sm font-semibold text-white bg-blue-600 hover:bg-blue-700 disabled:opacity-50"
+                          >
+                            {submitting ? 'Đang lưu...' : 'Lưu sửa'}
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  )}
                 </>
               )}
             </div>
@@ -5899,6 +7016,25 @@ export default function StaffDashboardPage() {
                   </div>
                 </div>
               ))}
+              <div className="flex items-center justify-end gap-3">
+                <button
+                  type="button"
+                  onClick={() => setReviewsPage(prev => Math.max(1, prev - 1))}
+                  disabled={normalizedReviewsPage <= 1}
+                  className="h-10 px-4 rounded-xl border border-slate-200 text-slate-700 disabled:opacity-50"
+                >
+                  Trước
+                </button>
+                <span className="text-slate-700">Trang {normalizedReviewsPage}/{reviewsTotalPages}</span>
+                <button
+                  type="button"
+                  onClick={() => setReviewsPage(prev => Math.min(reviewsTotalPages, prev + 1))}
+                  disabled={normalizedReviewsPage >= reviewsTotalPages}
+                  className="h-10 px-4 rounded-xl border border-slate-200 text-slate-700 disabled:opacity-50"
+                >
+                  Sau
+                </button>
+              </div>
             </div>
           )}
 

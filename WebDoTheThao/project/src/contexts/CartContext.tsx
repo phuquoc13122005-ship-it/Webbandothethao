@@ -8,9 +8,9 @@ interface CartContextType {
   loading: boolean;
   itemCount: number;
   total: number;
-  addToCart: (productId: string, quantity?: number, shoeSize?: number | null) => Promise<void>;
+  addToCart: (productId: string, quantity?: number, selectedSize?: string | null) => Promise<void>;
   updateQuantity: (itemId: string, quantity: number) => Promise<void>;
-  updateItemSize: (itemId: string, shoeSize: number | null) => Promise<void>;
+  updateItemSize: (itemId: string, selectedSize: string | null) => Promise<void>;
   removeFromCart: (itemId: string) => Promise<void>;
   clearCart: () => Promise<void>;
   refreshCart: () => Promise<void>;
@@ -20,6 +20,7 @@ const CartContext = createContext<CartContextType | undefined>(undefined);
 
 interface LocalCartRecord {
   product_id: string;
+  selected_size?: string | null;
   shoe_size?: number | null;
   quantity: number;
 }
@@ -35,11 +36,7 @@ function readLocalCart(userId: string): LocalCartRecord[] {
     if (!raw) return [];
     const parsed = JSON.parse(raw) as LocalCartRecord[];
     if (!Array.isArray(parsed)) return [];
-    return parsed.filter(item => {
-      const hasValidSize =
-        item?.shoe_size == null || (Number.isFinite(item.shoe_size) && item.shoe_size >= 36 && item.shoe_size <= 45);
-      return item?.product_id && Number.isFinite(item?.quantity) && item.quantity > 0 && hasValidSize;
-    });
+    return parsed.filter(item => item?.product_id && Number.isFinite(item?.quantity) && item.quantity > 0);
   } catch {
     return [];
   }
@@ -50,15 +47,29 @@ function writeLocalCart(userId: string, items: LocalCartRecord[]) {
   window.localStorage.setItem(getLocalCartKey(userId), JSON.stringify(items));
 }
 
-function buildLocalItemId(productId: string, shoeSize: number | null | undefined) {
-  return `local::${productId}::${shoeSize ?? 'nosize'}`;
+function normalizeSelectedSize(selectedSize: string | null | undefined) {
+  const normalized = String(selectedSize || '').trim();
+  return normalized || null;
+}
+
+function toNumericShoeSize(selectedSize: string | null | undefined) {
+  const normalized = normalizeSelectedSize(selectedSize);
+  if (!normalized || !/^\d+$/.test(normalized)) return null;
+  return Number(normalized);
+}
+
+function buildLocalItemId(productId: string, selectedSize: string | null | undefined) {
+  const normalizedSize = normalizeSelectedSize(selectedSize);
+  return `local::${productId}::${encodeURIComponent(normalizedSize || 'nosize')}`;
 }
 
 function parseLocalItemId(itemId: string) {
   const [, productId, sizeValue] = itemId.split('::');
-  if (!productId) return { productId: '', shoeSize: null as number | null };
-  if (!sizeValue || sizeValue === 'nosize') return { productId, shoeSize: null as number | null };
-  return { productId, shoeSize: Number(sizeValue) };
+  if (!productId) return { productId: '', selectedSize: null as string | null };
+  if (!sizeValue) return { productId, selectedSize: null as string | null };
+  const decoded = decodeURIComponent(sizeValue);
+  if (!decoded || decoded === 'nosize') return { productId, selectedSize: null as string | null };
+  return { productId, selectedSize: decoded };
 }
 
 export function CartProvider({ children }: { children: ReactNode }) {
@@ -91,11 +102,13 @@ export function CartProvider({ children }: { children: ReactNode }) {
       const mappedItems = localItems.flatMap(item => {
         const product = productMap.get(item.product_id);
         if (!product) return [];
+        const selectedSize = normalizeSelectedSize(item.selected_size || (item.shoe_size != null ? String(item.shoe_size) : ''));
         return [{
-          id: buildLocalItemId(item.product_id, item.shoe_size ?? null),
+          id: buildLocalItemId(item.product_id, selectedSize),
           user_id: user.id,
           product_id: item.product_id,
-          shoe_size: item.shoe_size ?? null,
+          selected_size: selectedSize,
+          shoe_size: toNumericShoeSize(selectedSize),
           quantity: item.quantity,
           created_at: new Date().toISOString(),
           products: product,
@@ -113,7 +126,15 @@ export function CartProvider({ children }: { children: ReactNode }) {
       .select('*, products(*)')
       .eq('user_id', user.id)
       .order('created_at', { ascending: false });
-    setItems(data || []);
+    const normalizedItems = ((data || []) as CartItem[]).map(item => {
+      const selectedSize = normalizeSelectedSize(item.selected_size || (item.shoe_size != null ? String(item.shoe_size) : ''));
+      return {
+        ...item,
+        selected_size: selectedSize,
+        shoe_size: toNumericShoeSize(selectedSize),
+      };
+    });
+    setItems(normalizedItems);
     if (!silent) setLoading(false);
   }, [user]);
 
@@ -121,25 +142,27 @@ export function CartProvider({ children }: { children: ReactNode }) {
     fetchCart();
   }, [fetchCart]);
 
-  const addToCart = async (productId: string, quantity = 1, shoeSize: number | null = null) => {
+  const addToCart = async (productId: string, quantity = 1, selectedSize: string | null = null) => {
     if (!user) return;
+    const normalizedSelectedSize = normalizeSelectedSize(selectedSize);
+    const shoeSize = toNumericShoeSize(normalizedSelectedSize);
     if (user.provider === 'google') {
       const localItems = readLocalCart(user.id);
-      const existing = localItems.find(item => item.product_id === productId && (item.shoe_size ?? null) === shoeSize);
+      const existing = localItems.find(item => item.product_id === productId && normalizeSelectedSize(item.selected_size) === normalizedSelectedSize);
       const nextItems = existing
         ? localItems.map(item =>
-            item.product_id === productId && (item.shoe_size ?? null) === shoeSize
+            item.product_id === productId && normalizeSelectedSize(item.selected_size) === normalizedSelectedSize
               ? { ...item, quantity: item.quantity + quantity }
               : item,
           )
-        : [...localItems, { product_id: productId, shoe_size: shoeSize, quantity }];
+        : [...localItems, { product_id: productId, selected_size: normalizedSelectedSize, shoe_size: shoeSize, quantity }];
       writeLocalCart(user.id, nextItems);
       await fetchCart(true);
       return;
     }
 
     const previousItems = items;
-    const existing = items.find(item => item.product_id === productId && (item.shoe_size ?? null) === shoeSize);
+    const existing = items.find(item => item.product_id === productId && normalizeSelectedSize(item.selected_size) === normalizedSelectedSize);
     if (existing) {
       setItems(prev =>
         prev.map(item =>
@@ -149,12 +172,13 @@ export function CartProvider({ children }: { children: ReactNode }) {
         ),
       );
     } else {
-      const tempId = `temp-${productId}-${shoeSize ?? 'nosize'}-${Date.now()}`;
+      const tempId = `temp-${productId}-${normalizedSelectedSize || 'nosize'}-${Date.now()}`;
       setItems(prev => ([
         {
           id: tempId,
           user_id: user.id,
           product_id: productId,
+          selected_size: normalizedSelectedSize,
           shoe_size: shoeSize,
           quantity,
           created_at: new Date().toISOString(),
@@ -164,7 +188,13 @@ export function CartProvider({ children }: { children: ReactNode }) {
 
       const { data: inserted, error } = await db
         .from('cart_items')
-        .insert({ user_id: user.id, product_id: productId, shoe_size: shoeSize, quantity })
+        .insert({
+          user_id: user.id,
+          product_id: productId,
+          selected_size: normalizedSelectedSize,
+          shoe_size: shoeSize,
+          quantity,
+        })
         .select('*, products(*)')
         .maybeSingle();
 
@@ -174,7 +204,15 @@ export function CartProvider({ children }: { children: ReactNode }) {
         return;
       }
 
-      setItems(prev => prev.map(item => (item.id === tempId ? inserted : item)));
+      setItems(prev => prev.map(item => (
+        item.id === tempId
+          ? {
+              ...(inserted as CartItem),
+              selected_size: normalizeSelectedSize((inserted as CartItem).selected_size || ((inserted as CartItem).shoe_size != null ? String((inserted as CartItem).shoe_size) : '')),
+              shoe_size: toNumericShoeSize((inserted as CartItem).selected_size || ((inserted as CartItem).shoe_size != null ? String((inserted as CartItem).shoe_size) : '')),
+            }
+          : item
+      )));
       return;
     }
 
@@ -212,13 +250,15 @@ export function CartProvider({ children }: { children: ReactNode }) {
     }
   };
 
-  const updateItemSize = async (itemId: string, shoeSize: number | null) => {
+  const updateItemSize = async (itemId: string, selectedSize: string | null) => {
     if (!user) return;
+    const normalizedSelectedSize = normalizeSelectedSize(selectedSize);
+    const shoeSize = toNumericShoeSize(normalizedSelectedSize);
     if (user.provider === 'google') {
-      const { productId, shoeSize: currentSize } = parseLocalItemId(itemId);
+      const { productId, selectedSize: currentSize } = parseLocalItemId(itemId);
       const localItems = readLocalCart(user.id).map(item =>
-        item.product_id === productId && (item.shoe_size ?? null) === currentSize
-          ? { ...item, shoe_size: shoeSize }
+        item.product_id === productId && normalizeSelectedSize(item.selected_size) === currentSize
+          ? { ...item, selected_size: normalizedSelectedSize, shoe_size: shoeSize }
           : item,
       );
       writeLocalCart(user.id, localItems);
@@ -227,7 +267,8 @@ export function CartProvider({ children }: { children: ReactNode }) {
           item.id === itemId
             ? {
                 ...item,
-                id: buildLocalItemId(item.product_id, shoeSize),
+                id: buildLocalItemId(item.product_id, normalizedSelectedSize),
+                selected_size: normalizedSelectedSize,
                 shoe_size: shoeSize,
               }
             : item,
@@ -237,9 +278,16 @@ export function CartProvider({ children }: { children: ReactNode }) {
     }
 
     const previousItems = items;
-    setItems(prev => prev.map(item => (item.id === itemId ? { ...item, shoe_size: shoeSize } : item)));
+    setItems(prev => prev.map(item => (
+      item.id === itemId
+        ? { ...item, selected_size: normalizedSelectedSize, shoe_size: shoeSize }
+        : item
+    )));
 
-    const { error } = await db.from('cart_items').update({ shoe_size: shoeSize }).eq('id', itemId);
+    const { error } = await db
+      .from('cart_items')
+      .update({ selected_size: normalizedSelectedSize, shoe_size: shoeSize })
+      .eq('id', itemId);
     if (error) {
       setItems(previousItems);
       await fetchCart(true);
@@ -249,9 +297,9 @@ export function CartProvider({ children }: { children: ReactNode }) {
   const removeFromCart = async (itemId: string) => {
     if (!user) return;
     if (user.provider === 'google') {
-      const { productId, shoeSize } = parseLocalItemId(itemId);
+      const { productId, selectedSize } = parseLocalItemId(itemId);
       const localItems = readLocalCart(user.id).filter(
-        item => !(item.product_id === productId && (item.shoe_size ?? null) === shoeSize),
+        item => !(item.product_id === productId && normalizeSelectedSize(item.selected_size) === selectedSize),
       );
       writeLocalCart(user.id, localItems);
       setItems(prev => prev.filter(item => item.id !== itemId));

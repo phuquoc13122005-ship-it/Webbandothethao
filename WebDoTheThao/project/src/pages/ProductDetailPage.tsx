@@ -274,13 +274,12 @@ export default function ProductDetailPage() {
       window.alert('Size này hiện đã hết hàng.');
       return;
     }
-    const numericSize = selectedSize && /^\d+$/.test(selectedSize) ? Number(selectedSize) : null;
-    if (requiresNumericSize && numericSize == null) {
+    if (requiresNumericSize && (!selectedSize || !/^\d+$/.test(selectedSize))) {
       window.alert('Size không hợp lệ cho sản phẩm giày.');
       return;
     }
     setAdding(true);
-    await addToCart(product.id, quantity, numericSize);
+    await addToCart(product.id, quantity, selectedSize);
     setAdding(false);
   };
 

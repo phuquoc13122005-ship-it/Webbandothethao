@@ -532,3 +532,208 @@
 - **Tính năng:** Tăng độ ổn định resolve link banner sản phẩm
 - **Trạng thái:** Tiếp tục làm dở dang
 - **Mô tả ngắn gọn:** Cập nhật `WebDoTheThao/project/src/pages/HomePage.tsx` để lấy map slug sản phẩm từ toàn bộ bảng `products` (`select id, slug` không giới hạn 500 bản ghi), tránh trường hợp banner `Lấy ảnh từ sản phẩm` có `target_product_id` hợp lệ nhưng không điều hướng do sản phẩm không nằm trong phạm vi query trước đó.
+
+- **Ngày/Giờ:** 2026-04-19 17:45:46
+- **Tính năng:** Sửa script seed Node.js random product tương thích schema products thực tế
+- **Trạng thái:** Tiếp tục làm dở dang
+- **Mô tả ngắn gọn:** Cập nhật `WebDoTheThao/project/random_product.js` từ bản cứng theo schema cũ sang bản tự dò cột (`SHOW COLUMNS FROM products`), hỗ trợ ESM (`import`), tự xử lý `id` không auto increment, map linh hoạt `image_url/image`, thêm `slug/brand` khi có, và fallback cho cột `NOT NULL` để tránh lỗi insert liên tiếp do lệch cấu trúc DB.
+
+- **Ngày/Giờ:** 2026-04-19 17:56:28
+- **Tính năng:** Thêm phân trang danh sách sản phẩm (15 sản phẩm/trang)
+- **Trạng thái:** Làm mới hoàn toàn
+- **Mô tả ngắn gọn:** Cập nhật `WebDoTheThao/project/src/pages/ProductsPage.tsx` thêm state phân trang và render lưới theo `paginatedProducts`, mỗi trang 15 sản phẩm; bổ sung cụm điều hướng `Trước/Sau` + số trang ở dưới lưới và canh phải; tự reset về trang 1 khi thay đổi lọc/tìm kiếm/sắp xếp để tránh trang rỗng.
+
+- **Ngày/Giờ:** 2026-04-19 17:59:40
+- **Tính năng:** Thêm phân trang danh sách sản phẩm trong admin (50 sản phẩm/trang)
+- **Trạng thái:** Làm mới hoàn toàn
+- **Mô tả ngắn gọn:** Cập nhật `WebDoTheThao/project/src/pages/StaffDashboardPage.tsx` cho tab `Danh sách sản phẩm` thêm state trang hiện tại, chia dữ liệu theo `ADMIN_PRODUCTS_PER_PAGE = 50`, tự clamp trang khi số lượng thay đổi, và thêm cụm điều hướng `Trước/Sau` + hiển thị `Trang x/y` ở dưới danh sách, canh phải.
+
+- **Ngày/Giờ:** 2026-04-19 18:03:33
+- **Tính năng:** Thu gọn cụm tìm kiếm trong tab Danh sách sản phẩm admin
+- **Trạng thái:** Tiếp tục làm dở dang
+- **Mô tả ngắn gọn:** Cập nhật `WebDoTheThao/project/src/pages/StaffDashboardPage.tsx` để làm ô tìm kiếm ngắn gọn hơn (`max-w-sm`, `h-9`), rút placeholder thành `Tìm sản phẩm`, và giảm chiều cao/nội dung nút `Tìm kiếm` cho gọn giao diện.
+
+- **Ngày/Giờ:** 2026-04-19 18:05:16
+- **Tính năng:** Thu ngắn thêm chiều rộng ô tìm kiếm sản phẩm admin
+- **Trạng thái:** Tiếp tục làm dở dang
+- **Mô tả ngắn gọn:** Cập nhật `WebDoTheThao/project/src/pages/StaffDashboardPage.tsx` đổi `max-w-sm` thành `max-w-xs` để ô tìm kiếm ngắn hơn theo yêu cầu.
+
+- **Ngày/Giờ:** 2026-04-19 18:12:16
+- **Tính năng:** Hoàn thiện slider ảnh homepage có điều hướng theo banner
+- **Trạng thái:** Tiếp tục làm dở dang
+- **Mô tả ngắn gọn:** Cập nhật `WebDoTheThao/project/src/pages/HomePage.tsx` để slider hero hiển thị ảnh banner rõ hơn (`opacity-100`), giữ auto-slide, và render ảnh bằng `Link` khi banner có target hợp lệ (product/category) để bấm vào ảnh chuyển trang đúng; banner không có target vẫn hiển thị nhưng không click.
+
+- **Ngày/Giờ:** 2026-04-19 18:14:47
+- **Tính năng:** Ẩn toàn bộ chữ trên slider đầu trang homepage
+- **Trạng thái:** Tiếp tục làm dở dang
+- **Mô tả ngắn gọn:** Cập nhật `WebDoTheThao/project/src/pages/HomePage.tsx` xoá toàn bộ badge/tiêu đề/mô tả/nút trong hero slider, giữ lại slider ảnh + nút điều hướng; thêm khối chiều cao cố định để slider vẫn hiển thị đúng và giảm lớp phủ tối để ảnh nổi bật hơn.
+
+- **Ngày/Giờ:** 2026-04-19 18:16:47
+- **Tính năng:** Sửa lỗi không bấm được link trên slide homepage
+- **Trạng thái:** Tiếp tục làm dở dang
+- **Mô tả ngắn gọn:** Cập nhật `WebDoTheThao/project/src/pages/HomePage.tsx` thêm `pointer-events-none` cho khối giữ chiều cao slider để không chặn sự kiện click vào ảnh slide có `Link` điều hướng sản phẩm/danh mục.
+
+- **Ngày/Giờ:** 2026-04-19 18:23:47
+- **Tính năng:** Chỉnh layout popup tạo tài khoản (địa chỉ cùng hàng role)
+- **Trạng thái:** Tiếp tục làm dở dang
+- **Mô tả ngắn gọn:** Cập nhật `WebDoTheThao/project/src/pages/StaffDashboardPage.tsx` trong form popup tạo tài khoản, bỏ `md:col-span-2` của ô `Địa chỉ` để ô này hiển thị cùng hàng với ô chọn `Role` theo bố cục 2 cột.
+
+- **Ngày/Giờ:** 2026-04-19 19:57:20
+- **Tính năng:** Đồng bộ bộ lọc chi nhánh trang sản phẩm theo cấu hình chi nhánh admin
+- **Trạng thái:** Tiếp tục làm dở dang
+- **Mô tả ngắn gọn:** Cập nhật `WebDoTheThao/project/src/pages/ProductsPage.tsx` bỏ danh sách `BRANCH_OPTIONS` hardcode, lấy danh sách chi nhánh từ bảng `branches` (giống nguồn dùng ở form thêm/sửa sản phẩm), kèm fallback an toàn theo `branch_name` của sản phẩm và giữ các chi nhánh đã chọn trong URL để không mất trạng thái lọc.
+
+- **Ngày/Giờ:** 2026-04-19 20:00:44
+- **Tính năng:** Chuyển chỉnh sửa tài khoản sang popup trong tab khách hàng/nhân viên
+- **Trạng thái:** Tiếp tục làm dở dang
+- **Mô tả ngắn gọn:** Cập nhật `WebDoTheThao/project/src/pages/StaffDashboardPage.tsx` để bỏ form sửa inline trong từng card tài khoản, khi bấm `Chỉnh sửa` sẽ mở popup `Chỉnh sửa tài khoản` và dùng lại logic lưu cũ `handleUpdateAccount`; giữ nguyên quyền admin và các trường chỉnh sửa (họ tên, email, SĐT, địa chỉ, role, mật khẩu mới).
+
+- **Ngày/Giờ:** 2026-04-19 20:19:50
+- **Tính năng:** Tự chia tồn kho theo từng size khi lưu sản phẩm
+- **Trạng thái:** Tiếp tục làm dở dang
+- **Mô tả ngắn gọn:** Cập nhật `WebDoTheThao/project/src/pages/StaffDashboardPage.tsx` thêm hàm `buildDistributedSizeStock` để tự động chia đều `stock` cho từng `size_options` khi tạo/sửa sản phẩm; nếu dư 1 thì cộng lần lượt cho các size đầu, đồng thời lưu xuống cột `size_stock` để tab `Quản lý tồn kho` đọc đúng tồn theo size.
+
+- **Ngày/Giờ:** 2026-04-19 20:24:15
+- **Tính năng:** Sửa fallback tồn kho theo size cho sản phẩm cũ chưa có size_stock
+- **Trạng thái:** Tiếp tục làm dở dang
+- **Mô tả ngắn gọn:** Cập nhật `WebDoTheThao/project/src/pages/StaffDashboardPage.tsx` thêm `resolveProductSizeStockMap` để khi `size_stock` trống nhưng sản phẩm có `size_options` và `stock` tổng, hệ thống tự suy ra tồn kho theo size (chia đều, dư cộng size đầu) trong popup quản lý tồn kho và khi lưu chỉnh tồn theo size, tránh tình trạng tổng tồn có nhưng từng size hiển thị 0.
+
+- **Ngày/Giờ:** 2026-04-19 20:34:19
+- **Tính năng:** Thêm trang Liên hệ động và tab admin chỉnh sửa như Giới thiệu
+- **Trạng thái:** Tiếp tục làm dở dang
+- **Mô tả ngắn gọn:** Tạo `WebDoTheThao/project/src/pages/ContactPage.tsx` đọc nội dung `contact_page` từ `site_contents`; cập nhật route trong `WebDoTheThao/project/src/App.tsx` với đường dẫn `/lien-he`; cập nhật `WebDoTheThao/project/src/components/layout/Header.tsx` để link `Liên hệ` trỏ đúng trang mới (desktop/mobile); mở rộng `WebDoTheThao/project/src/pages/StaffDashboardPage.tsx` thêm tab `contact_content` (chỉ admin), trạng thái riêng, nút lưu/xem trước giống `about_content`; cập nhật `auth-server.js` seed mặc định thêm `contact_page` trong `ensureSiteContentsTable`.
+
+- **Ngày/Giờ:** 2026-04-19 20:37:47
+- **Tính năng:** Thêm form gửi hỗ trợ dưới trang Liên hệ và đẩy về tab Hỗ trợ admin/staff
+- **Trạng thái:** Tiếp tục làm dở dang
+- **Mô tả ngắn gọn:** Cập nhật `WebDoTheThao/project/src/pages/ContactPage.tsx` thêm form `Họ tên/Email/Điện thoại/Nội dung` + nút `Gửi thông tin`; cập nhật `WebDoTheThao/project/src/lib/db.ts` thêm `submitSupportRequest`; cập nhật `auth-server.js` thêm endpoint public `POST /api/support/submit` để ghi yêu cầu vào `support_requests` và thêm `ensureSupportRequestsTable` để tự tạo bảng khi thiếu, giúp dữ liệu hiển thị trực tiếp trong tab `Hỗ trợ` của `WebDoTheThao/project/src/pages/StaffDashboardPage.tsx`.
+
+- **Ngày/Giờ:** 2026-04-19 21:43:27
+- **Tính năng:** Sắp xếp hiển thị yêu cầu hỗ trợ theo Tên | Email | SĐT | Nội dung
+- **Trạng thái:** Tiếp tục làm dở dang
+- **Mô tả ngắn gọn:** Cập nhật `WebDoTheThao/project/src/pages/StaffDashboardPage.tsx` đổi UI tab `Hỗ trợ` để hiển thị đúng thứ tự `Tên | Email | SĐT | Nội dung`; cập nhật `WebDoTheThao/project/src/types/index.ts` thêm trường `phone` cho `SupportRequest`; cập nhật `auth-server.js` mở rộng bảng `support_requests` có cột `phone` (auto migration nếu thiếu) và lưu `phone` riêng khi gửi từ trang liên hệ thay vì nhúng vào `message`.
+
+- **Ngày/Giờ:** 2026-04-19 21:45:26
+- **Tính năng:** Gắn nhãn rõ ràng cho từng trường trong danh sách hỗ trợ
+- **Trạng thái:** Tiếp tục làm dở dang
+- **Mô tả ngắn gọn:** Cập nhật `WebDoTheThao/project/src/pages/StaffDashboardPage.tsx` tại tab `Hỗ trợ` để hiển thị dạng có nhãn: `Họ và tên: ... | Email: ... | Số điện thoại: ... | Nội dung: ...` thay cho chuỗi ngăn cách bằng `|` không có mô tả trường.
+
+- **Ngày/Giờ:** 2026-04-26 22:19:45
+- **Tính năng:** Tạo Postman staff API và cập nhật tài liệu README Postman
+- **Trạng thái:** Làm mới hoàn toàn
+- **Mô tả ngắn gọn:** Tạo file `postman-staff-api.collection.json` dựa theo cấu trúc `postman-user-api` và `postman-admin-api` (gồm login staff, bootstrap biến, thao tác đơn hàng/hỗ trợ/tồn kho, kiểm tra đọc dữ liệu và logout); cập nhật `README_POSTMAN.md` bổ sung hướng dẫn import/chạy luồng Staff, biến cần cấu hình và checklist kết quả báo cáo.
+
+- **Ngày/Giờ:** 2026-04-27 13:48:52
+- **Tính năng:** Sửa lỗi vợt bị ép chọn size giày khi mua ngay/checkout
+- **Trạng thái:** Tiếp tục làm dở dang
+- **Mô tả ngắn gọn:** Cập nhật `WebDoTheThao/project/src/pages/CartPage.tsx` và `WebDoTheThao/project/src/pages/CheckoutPage.tsx` để chỉ bắt buộc chọn size với sản phẩm thực sự cần size số (size_type giày hoặc size_options thuần số), tránh chặn sản phẩm vợt có size tự nhập như `3U/4U`; đồng thời ẩn dropdown size giày cho sản phẩm không áp dụng và hiển thị `Size: Không áp dụng`.
+
+- **Ngày/Giờ:** 2026-04-24 11:53:46
+- **Tính năng:** Tạo bộ Postman riêng cho Staff và cập nhật tài liệu chạy test
+- **Trạng thái:** Làm mới hoàn toàn
+- **Mô tả ngắn gọn:** Tạo mới `postman-staff-api.collection.json` dựa trên cấu trúc `postman-user-api.collection.json` và `postman-admin-api.collection.json`, bao gồm luồng `login`, `bootstrap biến`, thao tác staff trên `orders/support_requests/products`, và `logout`; cập nhật `README_POSTMAN.md` thêm hướng dẫn import/cấu hình/chạy/report cho collection staff.
+
+- **Ngày/Giờ:** 2026-04-27 13:52:00
+- **Tính năng:** Cho phép giỏ hàng chọn size custom (3U/4U) khi size_type không áp dụng
+- **Trạng thái:** Tiếp tục làm dở dang
+- **Mô tả ngắn gọn:** Cập nhật `WebDoTheThao/project/src/contexts/CartContext.tsx` để lưu `selected_size` dạng text song song `shoe_size` số; cập nhật `WebDoTheThao/project/src/pages/ProductDetailPage.tsx`, `WebDoTheThao/project/src/pages/CartPage.tsx`, `WebDoTheThao/project/src/pages/CheckoutPage.tsx`, `WebDoTheThao/project/src/pages/DashboardPage.tsx`, `WebDoTheThao/project/src/lib/checkoutSession.ts`, `WebDoTheThao/project/src/lib/checkoutOrder.ts`, `WebDoTheThao/project/src/types/index.ts` để hiển thị/chọn/truyền size custom đúng theo `size_options`; cập nhật `auth-server.js` thêm migration cột `cart_items.selected_size`, `order_items.size_label` và giữ trừ tồn theo size text trong `size_stock`.
+
+- **Ngày/Giờ:** 2026-04-27 14:02:00
+- **Tính năng:** Sửa lỗi không hủy được đơn hàng trong Dashboard
+- **Trạng thái:** Tiếp tục làm dở dang
+- **Mô tả ngắn gọn:** Cập nhật `WebDoTheThao/project/src/pages/DashboardPage.tsx` mở rộng bộ trạng thái cho phép hủy (`pending/confirmed` + biến thể tiếng Việt cũ) để tránh trượt filter khi cập nhật; cập nhật `auth-server.js` trong `applyOrderInventoryDelta` thêm fallback truy vấn khi DB cũ chưa có cột `order_items.size_label`, giúp hủy đơn không bị văng lỗi 500 do schema legacy.
+
+- **Ngày/Giờ:** 2026-04-27 14:05:00
+- **Tính năng:** Sửa lỗi popup báo hủy thất bại dù DB đã hủy thành công
+- **Trạng thái:** Tiếp tục làm dở dang
+- **Mô tả ngắn gọn:** Cập nhật `WebDoTheThao/project/src/pages/DashboardPage.tsx` thêm bước reconcile sau khi gọi API hủy: nếu response update không trả về bản ghi (do filter status trước/sau cập nhật) nhưng đơn đã chuyển `cancelled` trong DB thì tự đồng bộ lại danh sách đơn và đóng popup, không còn phải F5 mới thấy đã hủy.
+
+- **Ngày/Giờ:** 2026-04-27 14:10:00
+- **Tính năng:** Thêm popup chi tiết đơn hàng trong tab Đơn hàng admin/staff
+- **Trạng thái:** Tiếp tục làm dở dang
+- **Mô tả ngắn gọn:** Cập nhật `WebDoTheThao/project/src/pages/StaffDashboardPage.tsx` để bấm vào từng đơn mở popup chi tiết (Mã đơn, Khách hàng, Ngày đặt, Trạng thái, Lý do hủy/chi tiết lý do, danh sách sản phẩm trong đơn); bổ sung map nhãn lý do hủy và đóng popup khi đổi tab để tránh treo modal.
+
+- **Ngày/Giờ:** 2026-04-27 14:14:00
+- **Tính năng:** Đảm bảo lưu lý do hủy đơn vào DB để hiển thị đúng trong dashboard admin/staff
+- **Trạng thái:** Tiếp tục làm dở dang
+- **Mô tả ngắn gọn:** Cập nhật `auth-server.js` tại migration `ensureOrdersInventoryColumn` để tự bổ sung thêm các cột còn thiếu của bảng `orders` gồm `cancel_reason`, `cancel_reason_detail`, `cancelled_at` (ngoài `stock_deducted`), giúp khi user hủy đơn thì lý do chọn/nhập được lưu thật vào DB và popup chi tiết đơn ở admin/staff đọc ra đúng dữ liệu.
+
+- **Ngày/Giờ:** 2026-04-27 14:18:00
+- **Tính năng:** Đồng bộ lý do hủy giữa dashboard user và admin/staff theo thời gian thực
+- **Trạng thái:** Tiếp tục làm dở dang
+- **Mô tả ngắn gọn:** Cập nhật `WebDoTheThao/project/src/pages/DashboardPage.tsx` để sau khi hủy đơn thành công luôn thử ghi lại `cancel_reason/cancel_reason_detail/cancelled_at` vào DB (kể cả nhánh fallback/reconcile), tránh tình trạng UI user có lý do nhưng DB không lưu; cập nhật `WebDoTheThao/project/src/pages/StaffDashboardPage.tsx` thêm `handleOpenOrderDetail` để mở popup chi tiết sẽ tải lại order mới nhất từ DB trước khi hiển thị, đảm bảo admin/staff thấy lý do hủy mới nhất mà không cần F5.
+
+- **Ngày/Giờ:** 2026-04-27 14:27:00
+- **Tính năng:** Chặn lệch dữ liệu lý do hủy giữa user và admin do state tạm
+- **Trạng thái:** Tiếp tục làm dở dang
+- **Mô tả ngắn gọn:** Cập nhật `WebDoTheThao/project/src/pages/DashboardPage.tsx` để không còn tự gán tạm `cancel_reason` từ state cục bộ khi DB chưa lưu; sau khi hủy luôn reconcile lại đơn từ DB và ưu tiên dữ liệu thật, giúp màn user/admin hiển thị đồng nhất. Đồng thời kiểm tra DB xác nhận các đơn hủy cũ trước khi vá vẫn có `cancel_reason = null` nên cần tạo đơn hủy mới để kiểm tra luồng đã sửa.
+
+- **Ngày/Giờ:** 2026-04-27 14:40:00
+- **Tính năng:** Sửa dứt điểm lưu lý do hủy đơn bị rỗng do payload không tương thích
+- **Trạng thái:** Tiếp tục làm dở dang
+- **Mô tả ngắn gọn:** Cập nhật `WebDoTheThao/project/src/pages/DashboardPage.tsx` bỏ `cancelled_at` khỏi payload cập nhật hủy đơn (cả nhánh chính và nhánh persist lý do), chỉ giữ `status`, `cancel_reason`, `cancel_reason_detail` để tránh lỗi update âm thầm làm lý do hủy không ghi vào DB; từ đó popup chi tiết đơn bên admin/staff đọc đúng lý do do user chọn.
+
+- **Ngày/Giờ:** 2026-04-27 14:49:00
+- **Tính năng:** Thêm phân trang 30 mục cho Dashboard user và đơn hàng admin/staff
+- **Trạng thái:** Tiếp tục làm dở dang
+- **Mô tả ngắn gọn:** Cập nhật `WebDoTheThao/project/src/pages/DashboardPage.tsx` thêm phân trang danh sách đơn theo bộ lọc với `30` đơn/trang (nút `Trước/Sau`, hiển thị `Trang x/y`); cập nhật `WebDoTheThao/project/src/pages/StaffDashboardPage.tsx` thêm phân trang tab `Đơn hàng` cho admin/staff với `30` đơn/trang và tự điều chỉnh trang hiện tại khi tổng số đơn thay đổi.
+
+- **Ngày/Giờ:** 2026-04-27 14:54:00
+- **Tính năng:** Luôn hiển thị cụm phân trang dù chỉ có 1 trang
+- **Trạng thái:** Tiếp tục làm dở dang
+- **Mô tả ngắn gọn:** Cập nhật `WebDoTheThao/project/src/pages/DashboardPage.tsx` và `WebDoTheThao/project/src/pages/StaffDashboardPage.tsx` để thanh phân trang (`Trước | Trang x/y | Sau`) luôn hiển thị, không còn phụ thuộc điều kiện số lượng > 30; đồng thời dọn biến `cancelledAt` không dùng trong `DashboardPage.tsx` để sạch warning TypeScript.
+
+- **Ngày/Giờ:** 2026-04-27 14:58:00
+- **Tính năng:** Sửa lỗi trắng trang Dashboard user sau khi thêm phân trang
+- **Trạng thái:** Tiếp tục làm dở dang
+- **Mô tả ngắn gọn:** Cập nhật `WebDoTheThao/project/src/pages/DashboardPage.tsx` loại bỏ 2 `useEffect` đặt sau nhánh return có điều kiện (gây lỗi thứ tự hook khi render), thay bằng reset `userOrdersPage` trực tiếp trong handler đổi bộ lọc (`trạng thái`, `từ ngày`, `đến ngày`) để giữ phân trang ổn định và không còn trắng trang.
+
+- **Ngày/Giờ:** 2026-04-27 15:00:00
+- **Tính năng:** Thêm tìm kiếm đơn hàng user theo mã đơn và tên sản phẩm đã mua
+- **Trạng thái:** Tiếp tục làm dở dang
+- **Mô tả ngắn gọn:** Cập nhật `WebDoTheThao/project/src/pages/DashboardPage.tsx` thêm ô `Tìm kiếm` ngay trên thanh lọc đơn hàng (`Mã đơn hoặc tên sản phẩm`), mở rộng logic `filteredOrders` để lọc theo `order.id` hoặc `order_items.products.name` (không phân biệt hoa thường), đồng thời reset phân trang về trang 1 khi thay đổi từ khóa để trải nghiệm ổn định.
+
+- **Ngày/Giờ:** 2026-04-27 15:04:00
+- **Tính năng:** Thêm tìm kiếm đơn hàng cho admin/staff cùng hàng tiêu đề xử lý đơn
+- **Trạng thái:** Tiếp tục làm dở dang
+- **Mô tả ngắn gọn:** Cập nhật `WebDoTheThao/project/src/pages/StaffDashboardPage.tsx` thêm ô tìm kiếm ngay cạnh tiêu đề `Xem và xử lý đơn hàng`, hỗ trợ lọc theo `mã đơn`, `tên khách hàng` (full_name/phone/user_id), và `tên sản phẩm` trong `order_items`; áp dụng lọc trước phân trang 30 đơn/trang và reset trang về 1 khi đổi từ khóa.
+
+- **Ngày/Giờ:** 2026-04-27 15:10:00
+- **Tính năng:** Chuyển thêm tiêu đề section trang chủ sang popup từ nút nhỏ
+- **Trạng thái:** Tiếp tục làm dở dang
+- **Mô tả ngắn gọn:** Cập nhật `WebDoTheThao/project/src/pages/StaffDashboardPage.tsx` thay phần form inline `Tiêu đề section trang chủ` bằng nút nhỏ `+ Thêm tiêu đề section`; khi bấm mở popup để nhập tiêu đề, chọn nhóm và danh mục hiển thị rồi lưu. Giữ nguyên logic cũ `handleCreateHomeCategorySection` và tự đóng popup sau khi tạo thành công.
+
+- **Ngày/Giờ:** 2026-04-27 15:14:00
+- **Tính năng:** Tách riêng menu Danh mục thành 2 mục con và chuyển Section tiêu đề sang trang riêng
+- **Trạng thái:** Tiếp tục làm dở dang
+- **Mô tả ngắn gọn:** Cập nhật `WebDoTheThao/project/src/pages/StaffDashboardPage.tsx` thêm tab mới `section_titles`, tạo nhóm menu sidebar `Danh mục` dạng xổ xuống giống menu `Sản phẩm` với 2 mục con `Thêm danh mục` và `Thêm section tiêu đề`; đồng thời tách phần quản lý section trang chủ ra khỏi tab `categories` sang tab riêng `section_titles`, tránh hiển thị trùng trong cùng một trang.
+
+- **Ngày/Giờ:** 2026-04-27 15:18:00
+- **Tính năng:** Chuyển sửa section tiêu đề từ inline sang popup
+- **Trạng thái:** Tiếp tục làm dở dang
+- **Mô tả ngắn gọn:** Cập nhật `WebDoTheThao/project/src/pages/StaffDashboardPage.tsx` tại tab `section_titles` để nút `Sửa` mở popup chỉnh section (tiêu đề, nhóm, danh mục) thay vì hiển thị form inline trong danh sách; giữ nguyên các handler cũ `startEditHomeCategorySection`, `handleUpdateHomeCategorySection`, `cancelEditHomeCategorySection`.
+
+- **Ngày/Giờ:** 2026-04-27 15:22:00
+- **Tính năng:** Thêm nút Sửa/Xóa cho từng khuyến mãi trong danh sách
+- **Trạng thái:** Tiếp tục làm dở dang
+- **Mô tả ngắn gọn:** Cập nhật `WebDoTheThao/project/src/pages/StaffDashboardPage.tsx` thêm 2 hành động `Sửa` và `Xóa` ở mỗi card khuyến mãi; `Sửa` mở popup chỉnh thông tin mã (mã, tên, % giảm, đơn tối thiểu, số lần dùng, thời gian, trạng thái), `Xóa` có xác nhận rồi xóa trực tiếp khỏi bảng `promotions`; giữ nguyên nút bật/tắt khuyến mãi hiện tại.
+
+- **Ngày/Giờ:** 2026-04-27 15:33:00
+- **Tính năng:** Chuyển sửa danh mục sản phẩm từ inline sang popup
+- **Trạng thái:** Tiếp tục làm dở dang
+- **Mô tả ngắn gọn:** Cập nhật `WebDoTheThao/project/src/pages/StaffDashboardPage.tsx` tại tab `Thêm danh mục` để khi bấm icon `Sửa` mở popup chỉnh danh mục (tên, slug, mô tả, nhóm, size, ảnh), thay cho form edit inline trong danh sách; giữ nguyên các handler cập nhật/xóa hiện có để không đổi logic dữ liệu.
+
+- **Ngày/Giờ:** 2026-04-27 15:38:00
+- **Tính năng:** Thêm phân trang 30 item/trang cho các danh sách quản trị
+- **Trạng thái:** Tiếp tục làm dở dang
+- **Mô tả ngắn gọn:** Cập nhật `WebDoTheThao/project/src/pages/StaffDashboardPage.tsx` để phân trang kiểu `Trước | Trang x/y | Sau` cho các tab `Quản lý kho`, `Sản phẩm mới`, `Sản phẩm nổi bật`, `Thêm danh mục`, `Tài khoản khách hàng`, `Tài khoản nhân viên`, `Hỗ trợ`, `Đánh giá`; mỗi trang 30 item, tự giới hạn trang hợp lệ khi dữ liệu thay đổi và reset về trang 1 khi đổi từ khóa tìm kiếm kho.
+
+- **Ngày/Giờ:** 2026-04-27 15:47:00
+- **Tính năng:** Thêm tìm kiếm tài khoản theo tên/email tại trang khách hàng và nhân viên
+- **Trạng thái:** Tiếp tục làm dở dang
+- **Mô tả ngắn gọn:** Cập nhật `WebDoTheThao/project/src/pages/StaffDashboardPage.tsx` thêm ô tìm kiếm nằm cùng hàng với nút `Thêm tài khoản`, lọc danh sách `Tài khoản khách hàng` và `Tài khoản nhân viên` theo `full_name` + `email` (không phân biệt hoa thường/dấu), đồng thời reset về trang 1 khi đổi từ khóa để phân trang 30 item/trang hoạt động chính xác.
+
+- **Ngày/Giờ:** 2026-04-27 15:50:00
+- **Tính năng:** Đảo vị trí nút Thêm tài khoản và ô tìm kiếm ở trang tài khoản
+- **Trạng thái:** Tiếp tục làm dở dang
+- **Mô tả ngắn gọn:** Cập nhật `WebDoTheThao/project/src/pages/StaffDashboardPage.tsx` để nút `Thêm tài khoản` nằm bên trái và ô `Tìm theo tên hoặc email` nằm bên phải (cùng một hàng) trong tab `Tài khoản khách hàng` và `Tài khoản nhân viên`.
